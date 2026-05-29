@@ -1,0 +1,135 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #4e342e;
+  color: #fff;
+  flex-wrap: wrap;
+}
+.toolbar .brand {
+  font-weight: 700;
+  font-size: 16px;
+  margin-right: 8px;
+}
+.toolbar button {
+  background: #6d4c41;
+  color: #fff;
+  border: 1px solid #8d6e63;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.toolbar button:hover:not(:disabled) {
+  background: #7e5a4d;
+}
+.toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.toolbar button.primary {
+  background: #2e7d32;
+  border-color: #43a047;
+  font-weight: 600;
+}
+.toolbar button.primary.on {
+  background: #c62828;
+  border-color: #e53935;
+}
+.toolbar .speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.toolbar .divider {
+  width: 1px;
+  height: 24px;
+  background: #8d6e63;
+  margin: 0 4px;
+}
+
+/* Body layout */
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Palette */
+.palette {
+  width: 230px;
+  background: #f3ecdf;
+  border-right: 1px solid #d9cbb0;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+.palette h2 {
+  font-size: 14px;
+  margin: 14px 0 6px;
+  color: #5d4037;
+}
+.palette h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8d6e63;
+  margin: 8px 0 4px;
+}
+.palette-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.palette-item {
+  background: #fff;
+  border: 1px solid #d9cbb0;
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: grab;
+  text-align: center;
+}
+.palette-item:hover {
+  border-color: #b08d57;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
+}
+.palette-item span {
+  font-size: 10px;
+  color: #5d4037;
+  margin-top: 2px;
+  line-height: 1.2;
+}
+.palette-item .thumb {
+  pointer-events: none;
+}
+.train-item .train-thumb {
+  width: 56px;
+  height: 20px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #1565c0 0 40%, #e53935 40% 70%, #fdd835 70% 100%);
+}
+.hint {
+  font-size: 11px;
+  color: #7c6a55;
+  margin-top: 14px;
+}
+
+/* Canvas */
+.canvas-area {
+  flex: 1;
+  min-width: 0;
+  background: #efe2c8;
+  position: relative;
+}
