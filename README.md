@@ -9,3 +9,9 @@ npm run dev
 ```
 
 Hosted locally at http://localhost:5174/ 
+
+# Resources
+
+- [Track piece dimensions and specs](https://woodenrailway.info/track/track-math)
+- [Thomas the tank engine toy train wiki](https://thomaswoodenrailway.fandom.com/wiki/Official_Website). 
+- [Thomas the tank engine track types, history, pieces, etc](https://thomaswoodenrailway.fandom.com/wiki/Track#Traction_Rail)
