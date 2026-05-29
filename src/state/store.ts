@@ -34,6 +34,7 @@ interface StoreState {
   running: boolean;
   speed: number;
   view: View;
+  deleteArmed: boolean; // true while a dragged piece is hovering the palette (release = delete)
 
   addPiece: (defId: string, x: number, y: number) => void;
   movePiece: (id: string, x: number, y: number) => void;
@@ -43,6 +44,8 @@ interface StoreState {
   rotateSelected: (deltaDeg: number) => void;
   flipSelected: () => void;
   deleteSelected: () => void;
+  deletePiece: (id: string) => void;
+  setDeleteArmed: (v: boolean) => void;
   toggleSwitch: (id: string) => void;
   addTrain: (x: number, y: number, length: number) => void;
   setRunning: (v: boolean) => void;
@@ -76,6 +79,7 @@ export const useStore = create<StoreState>((set, get) => ({
   running: false,
   speed: DEFAULT_SPEED,
   view: { scale: DEFAULT_SCALE, x: 360, y: 280 },
+  deleteArmed: false,
 
   addPiece: (defId, x, y) => {
     if (!DEF_BY_ID[defId]) return;
@@ -134,14 +138,22 @@ export const useStore = create<StoreState>((set, get) => ({
 
   deleteSelected: () => {
     const id = get().selectedId;
-    if (!id) return;
+    if (id) get().deletePiece(id);
+  },
+
+  deletePiece: (id) => {
     const pieces = get().pieces.filter((p) => p.id !== id);
     set({
       pieces,
       ...derive(pieces),
-      selectedId: null,
+      selectedId: get().selectedId === id ? null : get().selectedId,
+      deleteArmed: false,
       trains: get().trains.filter((t) => pieces.some((p) => p.id === t.cursor.pieceId)),
     });
+  },
+
+  setDeleteArmed: (v) => {
+    if (get().deleteArmed !== v) set({ deleteArmed: v });
   },
 
   toggleSwitch: (id) => {

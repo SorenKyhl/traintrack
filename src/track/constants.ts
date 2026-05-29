@@ -17,6 +17,7 @@ export const STRAIGHT_D = 216;
 // Curves: 45 degrees per piece, 8 = full circle.
 export const CURVE_SWEEP_DEG = 45;
 export const CURVE_RADIUS = 202; // centerline radius of the large curve (inner 182 + half width)
+export const CURVE_RADIUS_SHORT = 110; // centerline radius of the short/tight curve (E1: inner ~90 + half width)
 
 // Connectors (visual nubs)
 export const MALE_PEG_RADIUS = 11.5 / 2;

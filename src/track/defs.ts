@@ -9,6 +9,7 @@
 
 import {
   CURVE_RADIUS,
+  CURVE_RADIUS_SHORT,
   CURVE_SWEEP_DEG,
   STRAIGHT_A,
   STRAIGHT_A1,
@@ -64,6 +65,9 @@ function straight(id: string, name: string, len: number): TrackDef {
 }
 
 const curveSeg: Segment = { kind: "arc", radius: CURVE_RADIUS, sweepDeg: CURVE_SWEEP_DEG, sign: 1 };
+// Mirror of curveSeg (turns the other way) and a tight short-radius curve.
+const curveSegR: Segment = { kind: "arc", radius: CURVE_RADIUS, sweepDeg: CURVE_SWEEP_DEG, sign: -1 };
+const shortCurveSeg: Segment = { kind: "arc", radius: CURVE_RADIUS_SHORT, sweepDeg: CURVE_SWEEP_DEG, sign: 1 };
 
 export const DEFS: TrackDef[] = [
   straight("straight-a", `Straight (${STRAIGHT_A}mm)`, STRAIGHT_A),
@@ -78,6 +82,16 @@ export const DEFS: TrackDef[] = [
       { id: "p1", gender: "M", levelOffset: 0 },
     ],
     lanes: [{ from: "p0", to: "p1", start: ORIGIN, segments: [curveSeg] }],
+  },
+  {
+    id: "curve-short",
+    name: "Tight curve (45°)",
+    category: "curve",
+    ports: [
+      { id: "p0", gender: "F", levelOffset: 0 },
+      { id: "p1", gender: "M", levelOffset: 0 },
+    ],
+    lanes: [{ from: "p0", to: "p1", start: ORIGIN, segments: [shortCurveSeg] }],
   },
   {
     id: "switch-fmm",
@@ -110,12 +124,69 @@ export const DEFS: TrackDef[] = [
     switchLanes: [0, 1],
   },
   {
+    id: "split-y-fmm",
+    name: "Y split (1 female → 2 male)",
+    category: "switch",
+    ports: [
+      { id: "p0", gender: "F", levelOffset: 0 }, // single end
+      { id: "p1", gender: "M", levelOffset: 0 }, // left branch
+      { id: "p2", gender: "M", levelOffset: 0 }, // right branch
+    ],
+    lanes: [
+      { from: "p0", to: "p1", start: ORIGIN, segments: [curveSeg] },
+      { from: "p0", to: "p2", start: ORIGIN, segments: [curveSegR] },
+    ],
+    switchLanes: [0, 1],
+  },
+  {
+    id: "split-y-mff",
+    name: "Y split (1 male → 2 female)",
+    category: "switch",
+    ports: [
+      { id: "p0", gender: "M", levelOffset: 0 },
+      { id: "p1", gender: "F", levelOffset: 0 },
+      { id: "p2", gender: "F", levelOffset: 0 },
+    ],
+    lanes: [
+      { from: "p0", to: "p1", start: ORIGIN, segments: [curveSeg] },
+      { from: "p0", to: "p2", start: ORIGIN, segments: [curveSegR] },
+    ],
+    switchLanes: [0, 1],
+  },
+  {
+    id: "switch-t",
+    name: "3-way switch (T)",
+    category: "switch",
+    ports: [
+      { id: "p0", gender: "F", levelOffset: 0 }, // single end
+      { id: "p1", gender: "M", levelOffset: 0 }, // straight through
+      { id: "p2", gender: "M", levelOffset: 0 }, // left branch
+      { id: "p3", gender: "M", levelOffset: 0 }, // right branch
+    ],
+    lanes: [
+      { from: "p0", to: "p1", start: ORIGIN, segments: [{ kind: "line", length: STRAIGHT_A }] },
+      { from: "p0", to: "p2", start: ORIGIN, segments: [curveSeg] },
+      { from: "p0", to: "p3", start: ORIGIN, segments: [curveSegR] },
+    ],
+    switchLanes: [0, 1, 2],
+  },
+  {
     id: "ascender",
-    name: "Ascender ramp",
+    name: "Ascender ramp (F→M)",
     category: "ascender",
     ports: [
       { id: "p0", gender: "F", levelOffset: 0 },
       { id: "p1", gender: "M", levelOffset: 1 }, // rises one level (reverse it for a descent)
+    ],
+    lanes: [{ from: "p0", to: "p1", start: ORIGIN, segments: [{ kind: "line", length: STRAIGHT_D }] }],
+  },
+  {
+    id: "ascender-mf",
+    name: "Ascender ramp (M→F)",
+    category: "ascender",
+    ports: [
+      { id: "p0", gender: "M", levelOffset: 0 },
+      { id: "p1", gender: "F", levelOffset: 1 }, // rises one level (reverse it for a descent)
     ],
     lanes: [{ from: "p0", to: "p1", start: ORIGIN, segments: [{ kind: "line", length: STRAIGHT_D }] }],
   },

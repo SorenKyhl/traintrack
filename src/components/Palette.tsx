@@ -2,6 +2,7 @@ import { sampleChain, type Pose } from "../geometry";
 import { DEFS, portsForDef, type Category, type PortGeom, type TrackDef } from "../track/defs";
 import { bodyPolygon, groovePolyline } from "../track/render";
 import { CONN, headCenterX, neckCorners } from "../track/connector";
+import { useStore } from "../state/store";
 import type { DropPayload } from "./CanvasStage";
 
 const GROUPS: { category: Category; label: string }[] = [
@@ -128,8 +129,14 @@ function EngineIcon({ color, cars }: { color: string; cars: number }) {
 }
 
 export function Palette() {
+  const deleteArmed = useStore((s) => s.deleteArmed);
   return (
-    <div className="palette">
+    <div className={deleteArmed ? "palette delete-armed" : "palette"}>
+      {deleteArmed && (
+        <div className="delete-overlay">
+          <span>🗑 Release to delete</span>
+        </div>
+      )}
       <h2>Track pieces</h2>
       {GROUPS.map((g) => (
         <section key={g.category}>
@@ -170,7 +177,7 @@ export function Palette() {
           </div>
         ))}
       </div>
-      <p className="hint">Drag pieces onto the table. Drag a piece near another's end and it snaps together. Drop a train on any track, then press Play. Click a switch to flip its route.</p>
+      <p className="hint">Drag pieces onto the table. Drag a piece near another's end and it snaps together. Drop a train on any track, then press Play. Click a switch to flip its route. Drag a piece back here to delete it.</p>
     </div>
   );
 }

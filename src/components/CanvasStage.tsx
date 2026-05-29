@@ -22,6 +22,7 @@ export function CanvasStage() {
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [panEnabled, setPanEnabled] = useState(true);
   const dragRef = useRef<{ id: string; gx: number; gy: number; moved: boolean } | null>(null);
+  const lastClient = useRef({ x: 0, y: 0 });
 
   const pieces = useStore((s) => s.pieces);
   const trains = useStore((s) => s.trains);
@@ -52,14 +53,39 @@ export function CanvasStage() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // Release a drag even if the mouse comes up outside the stage.
+  // Release a drag even if the mouse comes up outside the stage. Track the latest
+  // pointer position so we can tell, on release, whether it ended over the palette
+  // (which deletes the dragged piece — "drag back to the sidebar to delete").
   useEffect(() => {
     const onUp = () => finishDrag();
+    const track = (x: number, y: number) => {
+      lastClient.current = { x, y };
+      if (dragRef.current?.moved) useStore.getState().setDeleteArmed(overPalette(x, y));
+    };
+    const onMove = (e: MouseEvent) => track(e.clientX, e.clientY);
+    const onTouch = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (t) track(t.clientX, t.clientY);
+    };
     window.addEventListener("mouseup", onUp);
-    return () => window.removeEventListener("mouseup", onUp);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("touchmove", onTouch);
+    return () => {
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("touchmove", onTouch);
+    };
   }, []);
 
   const worldPointer = () => stageRef.current?.getRelativePointerPosition() ?? null;
+
+  // Is a screen point over the left palette (the delete drop-zone)?
+  const overPalette = (clientX: number, clientY: number) => {
+    const el = document.querySelector(".palette");
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+  };
 
   const startPieceDrag = (id: string, e: KonvaEventObject<MouseEvent>) => {
     e.cancelBubble = true;
@@ -89,7 +115,11 @@ export function CanvasStage() {
     dragRef.current = null;
     setPanEnabled(true);
     const s = useStore.getState();
-    if (d.moved) {
+    s.setDeleteArmed(false);
+    if (d.moved && overPalette(lastClient.current.x, lastClient.current.y)) {
+      // Dropped back over the palette -> delete it.
+      s.deletePiece(d.id);
+    } else if (d.moved) {
       s.endDrag(d.id);
     } else {
       // A click (no drag): toggle a switch's active branch.
