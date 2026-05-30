@@ -7,6 +7,7 @@ import {
   type PlacedPiece,
 } from "../track/placed";
 import { buildConnections, findSnap, type ConnectionMap } from "../network/connections";
+import { closeWithFlex } from "../network/relax";
 import { computeLevels } from "../network/levels";
 import { advance, makeCars, pieceLookup, type Cursor, type Train } from "../train";
 import { dist } from "../geometry";
@@ -86,7 +87,9 @@ export const useStore = create<StoreState>((set, get) => ({
     const piece: PlacedPiece = { id: newId("piece"), defId, x, y, rotation: 0, flipped: false, switchState: 0 };
     const snap = findSnap(piece, get().pieces);
     if (snap) Object.assign(piece, snap);
-    const pieces = [...get().pieces, piece];
+    // Drop it, then let the rest of the layout flex to close any near-miss joint
+    // (e.g. dropping the last piece into a loop). The new piece stays put.
+    const pieces = closeWithFlex([...get().pieces, piece], piece.id);
     set({ pieces, ...derive(pieces), selectedId: piece.id });
   },
 
@@ -114,7 +117,10 @@ export const useStore = create<StoreState>((set, get) => ({
     const others = pieces.filter((p) => p.id !== id);
     const snap = findSnap(piece, others);
     const updated = snap ? { ...piece, ...snap } : piece;
-    const next = pieces.map((p) => (p.id === id ? updated : p));
+    const snapped = pieces.map((p) => (p.id === id ? updated : p));
+    // Hold the piece the user dropped fixed and flex the rest of the layout to
+    // pull any near-miss joints shut -- this is what lets a loop actually close.
+    const next = closeWithFlex(snapped, id);
     set({ pieces: next, ...derive(next) });
   },
 

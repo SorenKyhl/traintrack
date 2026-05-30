@@ -32,6 +32,18 @@ export const SNAP_CAPTURE_RADIUS = 110; // how close a dragged port must be to s
 export const JOINT_GAP_TOLERANCE = 9; // mm of pull-apart still counted as connected
 export const JOINT_ANGLE_TOLERANCE_DEG = 11; // angular wiggle still counted as connected
 
+// --- Flex solver (loop closure) ---
+// Real wooden track only closes a loop because every joint is a little loose, and
+// the whole assembly bends to absorb the leftover gap (45 curves give sqrt(2)
+// distances that never line up exactly). When a free port lands within this much
+// of another, we treat them as "wanting" to mate and run a relaxation pass that
+// distributes the closure error across every joint in the loop. Whether it
+// actually closes is still judged by JOINT_GAP/ANGLE_TOLERANCE above -- those are
+// the per-joint play limits.
+export const FLEX_CAPTURE_RADIUS = 75; // mm gap the solver will try to pull shut
+export const FLEX_CAPTURE_ANGLE_DEG = 35; // angular mismatch the solver will try to pull shut
+export const RELAX_ITERATIONS = 48; // Gauss-Seidel passes over the joint graph
+
 // Default simulation speed
 export const DEFAULT_SPEED = 140; // mm/s
 

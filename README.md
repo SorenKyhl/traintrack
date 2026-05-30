@@ -23,6 +23,11 @@ Hosted locally at http://localhost:5174/
 - **Elastic "wiggle-room" snapping.** Drag a piece near another's free end and it clicks into
   place. Joints tolerate a little pull-apart and angular play (just like real BRIO), so imperfect
   loops — the kind 45° curves and √2 distances make unavoidable — still close and run smoothly.
+- **Loops flex shut.** When you drop a piece whose free end almost meets another's, the whole
+  layout *relaxes*: a constraint solver spreads the leftover gap across every joint in the loop so
+  the connection closes — exactly how a real wooden layout bends a little at each joint to come
+  together. If the residual is bigger than the joints' combined play, it stays open (you need a
+  different piece), and a drag that wasn't closing anything never disturbs the rest of the layout.
 - **Select → rotate / flip / delete** from the toolbar or keyboard.
 - **Drag a piece back onto the sidebar to delete it** (the palette highlights as a drop-zone).
 - **Pan** (drag the background) and **zoom** (mouse wheel).
