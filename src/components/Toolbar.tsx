@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useStore } from "../state/store";
+import { SavesModal } from "./SavesModal";
 
 export function Toolbar() {
   const running = useStore((s) => s.running);
@@ -11,10 +13,9 @@ export function Toolbar() {
   const deleteSelected = useStore((s) => s.deleteSelected);
   const relax = useStore((s) => s.relax);
   const clear = useStore((s) => s.clear);
-  const save = useStore((s) => s.save);
-  const load = useStore((s) => s.load);
   const exportJSON = useStore((s) => s.exportJSON);
   const importJSON = useStore((s) => s.importJSON);
+  const [showSaves, setShowSaves] = useState(false);
 
   const onExport = () => {
     const blob = new Blob([exportJSON()], { type: "application/json" });
@@ -61,11 +62,11 @@ export function Toolbar() {
       <button onClick={relax}>Relax</button>
 
       <span className="divider" />
-      <button onClick={save}>Save</button>
-      <button onClick={load}>Load</button>
+      <button onClick={() => setShowSaves(true)}>Saves</button>
       <button onClick={onExport}>Export</button>
       <button onClick={onImport}>Import</button>
       <button onClick={clear}>Clear</button>
+      {showSaves && <SavesModal onClose={() => setShowSaves(false)} />}
     </div>
   );
 }

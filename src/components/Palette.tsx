@@ -1,6 +1,6 @@
-import { sampleChain, type Pose } from "../geometry";
+import { poseAlong, sampleChain, totalLength, type Pose } from "../geometry";
 import { DEFS, portsForDef, type Category, type PortGeom, type TrackDef } from "../track/defs";
-import { bodyPolygon, groovePolyline } from "../track/render";
+import { bodyPolygon, groovePolyline, switchBodyHull } from "../track/render";
 import { CONN, headCenterX, neckCorners } from "../track/connector";
 import { useStore } from "../state/store";
 import type { DropPayload } from "./CanvasStage";
@@ -27,8 +27,10 @@ function Thumb({ def }: { def: TrackDef }) {
   const W = 80;
   const H = 56;
   const pad = 8;
+  const isSwitch = def.category === "switch";
   const laneSamples: Pose[][] = def.lanes.map((l) => sampleChain(l.segments, l.start, 7));
   const bodies = laneSamples.map((s) => bodyPolygon(s));
+  const hullBody = isSwitch ? switchBodyHull(laneSamples) : null;
 
   // Bounding box over all body outline points.
   const allX: number[] = [];
@@ -57,26 +59,75 @@ function Thumb({ def }: { def: TrackDef }) {
 
   return (
     <svg width={W} height={H} className="thumb">
-      {laneSamples.map((samp, i) => (
-        <g key={i}>
-          <path d={toPath(bodies[i])} fill={WOOD} stroke={WOOD_EDGE} strokeWidth={1} />
-          {([1, -1] as const).map((side) => (
-            <path
-              key={side}
-              d={toLine(groovePolyline(samp, side))}
-              fill="none"
-              stroke={GROOVE}
-              strokeWidth={Math.max(1.2, 6 * s)}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+      {isSwitch ? (
+        <>
+          <path d={toPath(hullBody!)} fill={WOOD} stroke={WOOD_EDGE} strokeWidth={1} />
+          {laneSamples.map((samp, i) => (
+            <g key={i}>
+              {([1, -1] as const).map((side) => (
+                <path
+                  key={side}
+                  d={toLine(groovePolyline(samp, side))}
+                  fill="none"
+                  stroke={GROOVE}
+                  strokeWidth={Math.max(1.2, 6 * s)}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ))}
+            </g>
           ))}
-        </g>
-      ))}
+          <ThumbSwitchIndicator def={def} tx={tx} ty={ty} s={s} />
+        </>
+      ) : (
+        laneSamples.map((samp, i) => (
+          <g key={i}>
+            <path d={toPath(bodies[i])} fill={WOOD} stroke={WOOD_EDGE} strokeWidth={1} />
+            {([1, -1] as const).map((side) => (
+              <path
+                key={side}
+                d={toLine(groovePolyline(samp, side))}
+                fill="none"
+                stroke={GROOVE}
+                strokeWidth={Math.max(1.2, 6 * s)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ))}
+          </g>
+        ))
+      )}
       {portsForDef(def).map((port) => (
         <ConnectorSvg key={port.id} port={port} tx={tx} ty={ty} s={s} />
       ))}
     </svg>
+  );
+}
+
+/** Red direction indicator for switch thumbnails (shows default lane 0 state). */
+function ThumbSwitchIndicator({ def, tx, ty, s }: { def: TrackDef; tx: (x: number) => number; ty: (y: number) => number; s: number }) {
+  const lane = def.lanes[0];
+  const len = totalLength(lane.segments);
+  const pose = poseAlong(lane.segments, lane.start, len * 0.7);
+  const cx = tx(pose.x);
+  const cy = ty(pose.y);
+  const angle = (pose.heading * 180) / Math.PI;
+  const w = 32 * s;
+  const h = 16 * s;
+  const rx = 7 * s;
+  return (
+    <rect
+      x={cx - w / 2}
+      y={cy - h / 2}
+      width={w}
+      height={h}
+      rx={rx}
+      ry={rx}
+      fill="#cc2200"
+      stroke="#881500"
+      strokeWidth={Math.max(0.5, 1.5 * s)}
+      transform={`rotate(${angle.toFixed(1)}, ${cx.toFixed(1)}, ${cy.toFixed(1)})`}
+    />
   );
 }
 

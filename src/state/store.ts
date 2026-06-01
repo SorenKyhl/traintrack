@@ -1,16 +1,19 @@
 import { create } from "zustand";
 import { DEFAULT_SCALE, DEFAULT_SPEED } from "../track/constants";
-import { DEF_BY_ID } from "../track/defs";
+import { DEF_BY_ID, portsForDef } from "../track/defs";
 import {
+  defOf,
   laneLength,
   worldLaneSamples,
+  worldPorts,
   type PlacedPiece,
 } from "../track/placed";
-import { buildConnections, findSnap, type ConnectionMap } from "../network/connections";
+import { buildConnections, findSnap, portKey, type ConnectionMap } from "../network/connections";
 import { closeWithFlex, relaxLayout, intendedConnectionCount } from "../network/relax";
 import { computeLevels } from "../network/levels";
 import { advance, makeCars, pieceLookup, type Cursor, type Train } from "../train";
 import { dist } from "../geometry";
+import { writeSlot, getSlot } from "./saves";
 
 const ENGINE_COLORS = ["#1565c0", "#c62828", "#2e7d32", "#6a1b9a", "#ef6c00"];
 const CAR_COLORS = ["#e53935", "#fdd835", "#43a047", "#8e24aa"];
@@ -55,16 +58,14 @@ interface StoreState {
   relax: () => void;
   clear: () => void;
   tick: (dt: number) => void;
-  save: () => void;
-  load: () => void;
+  saveAs: (name: string) => void;
+  loadSlot: (id: string) => void;
   exportJSON: () => string;
   importJSON: (json: string) => void;
 }
 
 let counter = 0;
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${counter++}`;
-
-const STORAGE_KEY = "traintrack-layout-v1";
 
 /** Recompute the connection graph and elevation levels for a set of pieces. */
 function derive(pieces: PlacedPiece[]): { connections: ConnectionMap; levels: Map<string, number> } {
@@ -159,8 +160,39 @@ export const useStore = create<StoreState>((set, get) => ({
   flipSelected: () => {
     const id = get().selectedId;
     if (!id) return;
-    const pieces = get().pieces.map((p) => (p.id === id ? { ...p, flipped: !p.flipped } : p));
-    set({ pieces, ...derive(pieces) });
+    const piece = get().pieces.find((p) => p.id === id);
+    if (!piece) return;
+    const connections = get().connections;
+    const connected = worldPorts(piece).filter((wp) => connections.has(portKey(id, wp.id)));
+
+    if (connected.length === 1) {
+      // Pivot the flip about the single connected port so the joint is preserved.
+      const conn = connections.get(portKey(id, connected[0].id))!;
+      const targetPiece = get().pieces.find((p) => p.id === conn.pieceId);
+      if (!targetPiece) {
+        const pieces = get().pieces.map((p) => (p.id === id ? { ...p, flipped: !p.flipped } : p));
+        set({ pieces, ...derive(pieces) });
+        return;
+      }
+      const targetPort = worldPorts(targetPiece).find((wp) => wp.id === conn.portId)!;
+      const newFlipped = !piece.flipped;
+      const localPort = portsForDef(defOf(piece)).find((p) => p.id === connected[0].id)!;
+      // Flip the local port coordinates to match the new flip state.
+      const lx = localPort.pos.x;
+      const ly = newFlipped ? -localPort.pos.y : localPort.pos.y;
+      const lh = newFlipped ? -localPort.angle : localPort.angle;
+      // Solve (rotation, x, y) so the flipped port sits anti-parallel on the target.
+      const rotation = targetPort.angle + Math.PI - lh;
+      const cosR = Math.cos(rotation);
+      const sinR = Math.sin(rotation);
+      const x = targetPort.pos.x - lx * cosR + ly * sinR;
+      const y = targetPort.pos.y - lx * sinR - ly * cosR;
+      const pieces = get().pieces.map((p) => (p.id === id ? { ...p, flipped: newFlipped, x, y, rotation } : p));
+      set({ pieces, ...derive(pieces) });
+    } else {
+      const pieces = get().pieces.map((p) => (p.id === id ? { ...p, flipped: !p.flipped } : p));
+      set({ pieces, ...derive(pieces) });
+    }
   },
 
   deleteSelected: () => {
@@ -266,20 +298,15 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  save: () => {
+  saveAs: (name) => {
     const { pieces, trains } = get();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ pieces, trains } satisfies LayoutSnapshot));
+    writeSlot({ name, savedAt: Date.now(), pieces, trains });
   },
 
-  load: () => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const snap = JSON.parse(raw) as LayoutSnapshot;
-      set({ pieces: snap.pieces, trains: snap.trains, ...derive(snap.pieces), selectedId: null });
-    } catch {
-      /* ignore corrupt save */
-    }
+  loadSlot: (id) => {
+    const slot = getSlot(id);
+    if (!slot) return;
+    set({ pieces: slot.pieces, trains: slot.trains, ...derive(slot.pieces), selectedId: null });
   },
 
   exportJSON: () => JSON.stringify({ pieces: get().pieces, trains: get().trains } satisfies LayoutSnapshot, null, 2),

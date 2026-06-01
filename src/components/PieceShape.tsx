@@ -1,10 +1,10 @@
-import { Group, Line } from "react-konva";
+import { Group, Line, Rect } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useStore } from "../state/store";
 import { defOf, type PlacedPiece } from "../track/placed";
-import { portsForDef } from "../track/defs";
+import { portsForDef, type TrackDef } from "../track/defs";
 import { poseAlong, sampleChain, totalLength } from "../geometry";
-import { bodyPolygon, groovePolyline } from "../track/render";
+import { bodyPolygon, groovePolyline, switchBodyHull } from "../track/render";
 import { Connector } from "./Connector";
 
 const WOOD_EDGE = "#8a6a3a";
@@ -38,6 +38,8 @@ export function PieceShape({
   const isSelected = useStore((s) => s.selectedId === piece.id);
   const activeLane = def.switchLanes?.[piece.switchState];
   const wood = woodAt(level);
+  const isSwitch = def.category === "switch";
+  const allSamples = isSwitch ? def.lanes.map((lane) => sampleChain(lane.segments, lane.start)) : null;
 
   return (
     <Group
@@ -48,44 +50,72 @@ export function PieceShape({
       shadowBlur={level > 0 ? 6 + level * 6 : 0}
       shadowOffset={level > 0 ? { x: 0, y: 5 * level } : undefined}
     >
-      {def.lanes.map((lane, laneIndex) => {
-        const samples = sampleChain(lane.segments, lane.start);
-        const isActiveBranch = activeLane === undefined || activeLane === laneIndex;
-        // Ascenders fill with a gradient (dark low end -> light high end) to show the ramp.
-        const isRamp = def.category === "ascender";
-        const start = lane.start;
-        const end = poseAlong(lane.segments, lane.start, totalLength(lane.segments));
-        const gradient = isRamp
-          ? {
-              fillLinearGradientStartPoint: { x: start.x, y: start.y },
-              fillLinearGradientEndPoint: { x: end.x, y: end.y },
-              fillLinearGradientColorStops: [0, woodAt(level - 1 < 0 ? 0 : level - 1), 1, woodAt(level)],
-            }
-          : { fill: wood };
-        return (
-          <Group key={laneIndex}>
-            <Line
-              points={bodyPolygon(samples)}
-              closed
-              {...gradient}
-              stroke={isSelected ? SELECTED : WOOD_EDGE}
-              strokeWidth={isSelected ? 4 : 2}
-              opacity={isActiveBranch ? 1 : 0.5}
-            />
-            {([1, -1] as const).map((side) => (
+      {isSwitch ? (
+        <>
+          {/* Single unified body — convex hull of all lane outlines */}
+          <Line
+            points={switchBodyHull(allSamples!)}
+            closed
+            fill={wood}
+            stroke={isSelected ? SELECTED : WOOD_EDGE}
+            strokeWidth={isSelected ? 4 : 2}
+          />
+          {/* Grooves gouged through all lanes */}
+          {allSamples!.flatMap((samples, laneIndex) => {
+            const isActiveBranch = activeLane === undefined || activeLane === laneIndex;
+            return ([1, -1] as const).map((side) => (
               <Line
-                key={side}
+                key={`${laneIndex}-${side}`}
                 points={groovePolyline(samples, side)}
-                stroke={def.category === "switch" && !isActiveBranch ? "#9a8050" : GROOVE}
+                stroke={isActiveBranch ? GROOVE : "#9a8050"}
                 strokeWidth={6}
                 lineCap="round"
                 lineJoin="round"
               />
-            ))}
-            {isRamp && <Chevrons lane={lane} />}
-          </Group>
-        );
-      })}
+            ));
+          })}
+          {/* BRIO-style red rotary direction indicator */}
+          <SwitchIndicator def={def} activeLaneIndex={activeLane ?? 0} />
+        </>
+      ) : (
+        def.lanes.map((lane, laneIndex) => {
+          const samples = sampleChain(lane.segments, lane.start);
+          const isActiveBranch = activeLane === undefined || activeLane === laneIndex;
+          const isRamp = def.category === "ascender";
+          const start = lane.start;
+          const end = poseAlong(lane.segments, lane.start, totalLength(lane.segments));
+          const gradient = isRamp
+            ? {
+                fillLinearGradientStartPoint: { x: start.x, y: start.y },
+                fillLinearGradientEndPoint: { x: end.x, y: end.y },
+                fillLinearGradientColorStops: [0, woodAt(level - 1 < 0 ? 0 : level - 1), 1, woodAt(level)],
+              }
+            : { fill: wood };
+          return (
+            <Group key={laneIndex}>
+              <Line
+                points={bodyPolygon(samples)}
+                closed
+                {...gradient}
+                stroke={isSelected ? SELECTED : WOOD_EDGE}
+                strokeWidth={isSelected ? 4 : 2}
+                opacity={isActiveBranch ? 1 : 0.5}
+              />
+              {([1, -1] as const).map((side) => (
+                <Line
+                  key={side}
+                  points={groovePolyline(samples, side)}
+                  stroke={GROOVE}
+                  strokeWidth={6}
+                  lineCap="round"
+                  lineJoin="round"
+                />
+              ))}
+              {isRamp && <Chevrons lane={lane} />}
+            </Group>
+          );
+        })
+      )}
 
       {/* Female sockets are part of the body (carved in); male pegs render in a top pass. */}
       {portsForDef(def)
@@ -131,5 +161,27 @@ function Chevrons({ lane }: { lane: ReturnType<typeof defOf>["lanes"][number] })
         );
       })}
     </>
+  );
+}
+
+/** Red rounded-rectangle direction indicator, positioned ~70% along the active lane. */
+function SwitchIndicator({ def, activeLaneIndex }: { def: TrackDef; activeLaneIndex: number }) {
+  const lane = def.lanes[activeLaneIndex];
+  const len = totalLength(lane.segments);
+  const dist = len * 0.7;
+  const pose = poseAlong(lane.segments, lane.start, dist);
+  return (
+    <Group x={pose.x} y={pose.y} rotation={(pose.heading * 180) / Math.PI}>
+      <Rect
+        x={-16}
+        y={-8}
+        width={32}
+        height={16}
+        cornerRadius={7}
+        fill="#cc2200"
+        stroke="#881500"
+        strokeWidth={1.5}
+      />
+    </Group>
   );
 }

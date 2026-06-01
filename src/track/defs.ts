@@ -64,10 +64,14 @@ function straight(id: string, name: string, len: number): TrackDef {
   };
 }
 
+// CW (sign +1): used by switch curved branches (bends right when heading right on screen)
 const curveSeg: Segment = { kind: "arc", radius: CURVE_RADIUS, sweepDeg: CURVE_SWEEP_DEG, sign: 1 };
-// Mirror of curveSeg (turns the other way) and a tight short-radius curve.
-const curveSegR: Segment = { kind: "arc", radius: CURVE_RADIUS, sweepDeg: CURVE_SWEEP_DEG, sign: -1 };
+// CCW (sign -1): default for standalone curve pieces; also the opposite branch in Y-splits / T-switch
+const curveSegCCW: Segment = { kind: "arc", radius: CURVE_RADIUS, sweepDeg: CURVE_SWEEP_DEG, sign: -1 };
+// Tight curve CW: for tight-curve switch branches
 const shortCurveSeg: Segment = { kind: "arc", radius: CURVE_RADIUS_SHORT, sweepDeg: CURVE_SWEEP_DEG, sign: 1 };
+// Tight curve CCW: default for standalone tight curve piece
+const shortCurveSegCCW: Segment = { kind: "arc", radius: CURVE_RADIUS_SHORT, sweepDeg: CURVE_SWEEP_DEG, sign: -1 };
 
 export const DEFS: TrackDef[] = [
   straight("straight-a", `Straight (${STRAIGHT_A}mm)`, STRAIGHT_A),
@@ -81,7 +85,7 @@ export const DEFS: TrackDef[] = [
       { id: "p0", gender: "F", levelOffset: 0 },
       { id: "p1", gender: "M", levelOffset: 0 },
     ],
-    lanes: [{ from: "p0", to: "p1", start: ORIGIN, segments: [curveSeg] }],
+    lanes: [{ from: "p0", to: "p1", start: ORIGIN, segments: [curveSegCCW] }],
   },
   {
     id: "curve-short",
@@ -91,7 +95,7 @@ export const DEFS: TrackDef[] = [
       { id: "p0", gender: "F", levelOffset: 0 },
       { id: "p1", gender: "M", levelOffset: 0 },
     ],
-    lanes: [{ from: "p0", to: "p1", start: ORIGIN, segments: [shortCurveSeg] }],
+    lanes: [{ from: "p0", to: "p1", start: ORIGIN, segments: [shortCurveSegCCW] }],
   },
   {
     id: "switch-fmm",
@@ -124,6 +128,36 @@ export const DEFS: TrackDef[] = [
     switchLanes: [0, 1],
   },
   {
+    id: "switch-short-fmm",
+    name: "Tight switch (1 female → 2 male)",
+    category: "switch",
+    ports: [
+      { id: "p0", gender: "F", levelOffset: 0 },
+      { id: "p1", gender: "M", levelOffset: 0 },
+      { id: "p2", gender: "M", levelOffset: 0 },
+    ],
+    lanes: [
+      { from: "p0", to: "p1", start: ORIGIN, segments: [{ kind: "line", length: STRAIGHT_A1 }] },
+      { from: "p0", to: "p2", start: ORIGIN, segments: [shortCurveSeg] },
+    ],
+    switchLanes: [0, 1],
+  },
+  {
+    id: "switch-short-mff",
+    name: "Tight switch (1 male → 2 female)",
+    category: "switch",
+    ports: [
+      { id: "p0", gender: "M", levelOffset: 0 },
+      { id: "p1", gender: "F", levelOffset: 0 },
+      { id: "p2", gender: "F", levelOffset: 0 },
+    ],
+    lanes: [
+      { from: "p0", to: "p1", start: ORIGIN, segments: [{ kind: "line", length: STRAIGHT_A1 }] },
+      { from: "p0", to: "p2", start: ORIGIN, segments: [shortCurveSeg] },
+    ],
+    switchLanes: [0, 1],
+  },
+  {
     id: "split-y-fmm",
     name: "Y split (1 female → 2 male)",
     category: "switch",
@@ -133,8 +167,8 @@ export const DEFS: TrackDef[] = [
       { id: "p2", gender: "M", levelOffset: 0 }, // right branch
     ],
     lanes: [
-      { from: "p0", to: "p1", start: ORIGIN, segments: [curveSeg] },
-      { from: "p0", to: "p2", start: ORIGIN, segments: [curveSegR] },
+      { from: "p0", to: "p1", start: ORIGIN, segments: [curveSegCCW] },
+      { from: "p0", to: "p2", start: ORIGIN, segments: [curveSeg] },
     ],
     switchLanes: [0, 1],
   },
@@ -148,8 +182,8 @@ export const DEFS: TrackDef[] = [
       { id: "p2", gender: "F", levelOffset: 0 },
     ],
     lanes: [
-      { from: "p0", to: "p1", start: ORIGIN, segments: [curveSeg] },
-      { from: "p0", to: "p2", start: ORIGIN, segments: [curveSegR] },
+      { from: "p0", to: "p1", start: ORIGIN, segments: [curveSegCCW] },
+      { from: "p0", to: "p2", start: ORIGIN, segments: [curveSeg] },
     ],
     switchLanes: [0, 1],
   },
@@ -165,8 +199,8 @@ export const DEFS: TrackDef[] = [
     ],
     lanes: [
       { from: "p0", to: "p1", start: ORIGIN, segments: [{ kind: "line", length: STRAIGHT_A }] },
-      { from: "p0", to: "p2", start: ORIGIN, segments: [curveSeg] },
-      { from: "p0", to: "p3", start: ORIGIN, segments: [curveSegR] },
+      { from: "p0", to: "p2", start: ORIGIN, segments: [curveSegCCW] },
+      { from: "p0", to: "p3", start: ORIGIN, segments: [curveSeg] },
     ],
     switchLanes: [0, 1, 2],
   },
