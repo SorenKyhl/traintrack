@@ -7,7 +7,7 @@ import {
   type PlacedPiece,
 } from "../track/placed";
 import { buildConnections, findSnap, type ConnectionMap } from "../network/connections";
-import { closeWithFlex } from "../network/relax";
+import { closeWithFlex, relaxLayout, intendedConnectionCount } from "../network/relax";
 import { computeLevels } from "../network/levels";
 import { advance, makeCars, pieceLookup, type Cursor, type Train } from "../train";
 import { dist } from "../geometry";
@@ -52,6 +52,7 @@ interface StoreState {
   setRunning: (v: boolean) => void;
   setSpeed: (v: number) => void;
   setView: (v: Partial<View>) => void;
+  relax: () => void;
   clear: () => void;
   tick: (dt: number) => void;
   save: () => void;
@@ -105,7 +106,16 @@ export const useStore = create<StoreState>((set, get) => ({
     const piece = pieces.find((p) => p.id === id);
     if (!piece) return;
     const moved = { ...piece, x, y };
-    const snap = findSnap(moved, pieces.filter((p) => p.id !== id));
+    const others = pieces.filter((p) => p.id !== id);
+    // Interior pieces of a relaxed loop have ≥ 2 intended connections. Snapping
+    // during drag causes them to flicker between their two neighbors as the cursor
+    // moves slightly. Suppress snap until the piece has been pulled far enough
+    // that it no longer has multiple intended connections.
+    if (intendedConnectionCount(id, pieces) >= 2) {
+      set({ pieces: pieces.map((p) => (p.id === id ? moved : p)) });
+      return;
+    }
+    const snap = findSnap(moved, others);
     const result = snap ? { ...moved, ...snap } : moved;
     set({ pieces: pieces.map((p) => (p.id === id ? result : p)) });
   },
@@ -116,8 +126,19 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!piece) return;
     const others = pieces.filter((p) => p.id !== id);
     const snap = findSnap(piece, others);
-    const updated = snap ? { ...piece, ...snap } : piece;
-    const snapped = pieces.map((p) => (p.id === id ? updated : p));
+    let snapped: PlacedPiece[];
+    if (snap) {
+      const candidate = pieces.map((p) => (p.id === id ? { ...piece, ...snap } : p));
+      // Use loose-tolerance intended count (same as flex solver) rather than strict
+      // connection count. Strict count misses joints that the solver relaxed to
+      // 10-20mm — within flex range but outside the 9mm strict tolerance — causing
+      // the guard to incorrectly allow a snap that breaks the intended connection.
+      const before = intendedConnectionCount(id, pieces);
+      const after = intendedConnectionCount(id, candidate);
+      snapped = after >= before ? candidate : pieces;
+    } else {
+      snapped = pieces;
+    }
     // Hold the piece the user dropped fixed and flex the rest of the layout to
     // pull any near-miss joints shut -- this is what lets a loop actually close.
     const next = closeWithFlex(snapped, id);
@@ -201,6 +222,14 @@ export const useStore = create<StoreState>((set, get) => ({
   setRunning: (v) => set({ running: v }),
   setSpeed: (v) => set({ speed: v }),
   setView: (v) => set({ view: { ...get().view, ...v } }),
+
+  relax: () => {
+    const { pieces, selectedId } = get();
+    if (pieces.length === 0) return;
+    const pinnedId = selectedId ?? pieces[0].id;
+    const next = relaxLayout(pieces, pinnedId);
+    set({ pieces: next, ...derive(next) });
+  },
 
   clear: () => set({ pieces: [], trains: [], connections: new Map(), levels: new Map(), selectedId: null, running: false }),
 

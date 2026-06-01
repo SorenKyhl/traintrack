@@ -42,7 +42,9 @@ export const JOINT_ANGLE_TOLERANCE_DEG = 11; // angular wiggle still counted as 
 // the per-joint play limits.
 export const FLEX_CAPTURE_RADIUS = 75; // mm gap the solver will try to pull shut
 export const FLEX_CAPTURE_ANGLE_DEG = 35; // angular mismatch the solver will try to pull shut
-export const RELAX_ITERATIONS = 48; // Gauss-Seidel passes over the joint graph
+export const FLEX_GN_PASSES = 4; // Gauss-Newton outer iterations
+export const FLEX_REGULARIZATION = 1e-4; // Tikhonov λ — ensures well-posedness, picks minimum-norm correction
+export const FLEX_ANGLE_WEIGHT = STRAIGHT_A / 2; // lever-arm weight (mm) that puts angle in position-equivalent units
 
 // Default simulation speed
 export const DEFAULT_SPEED = 140; // mm/s

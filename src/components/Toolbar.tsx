@@ -9,6 +9,7 @@ export function Toolbar() {
   const rotateSelected = useStore((s) => s.rotateSelected);
   const flipSelected = useStore((s) => s.flipSelected);
   const deleteSelected = useStore((s) => s.deleteSelected);
+  const relax = useStore((s) => s.relax);
   const clear = useStore((s) => s.clear);
   const save = useStore((s) => s.save);
   const load = useStore((s) => s.load);
@@ -55,6 +56,9 @@ export function Toolbar() {
       <button disabled={!hasSel} onClick={() => rotateSelected(45)}>⟳ 45°</button>
       <button disabled={!hasSel} onClick={flipSelected}>⇅ Flip</button>
       <button disabled={!hasSel} onClick={deleteSelected}>🗑 Delete</button>
+
+      <span className="divider" />
+      <button onClick={relax}>Relax</button>
 
       <span className="divider" />
       <button onClick={save}>Save</button>
