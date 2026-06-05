@@ -1,6 +1,6 @@
 import { poseAlong, sampleChain, totalLength, type Pose } from "../geometry";
 import { DEFS, portsForDef, type Category, type PortGeom, type TrackDef } from "../track/defs";
-import { bodyPolygon, groovePolyline, switchBodyHull } from "../track/render";
+import { bodyPolygon, groovePolyline } from "../track/render";
 import { CONN, headCenterX, neckCorners } from "../track/connector";
 import { useStore } from "../state/store";
 import type { DropPayload } from "./CanvasStage";
@@ -30,7 +30,6 @@ function Thumb({ def }: { def: TrackDef }) {
   const isSwitch = def.category === "switch";
   const laneSamples: Pose[][] = def.lanes.map((l) => sampleChain(l.segments, l.start, 7));
   const bodies = laneSamples.map((s) => bodyPolygon(s));
-  const hullBody = isSwitch ? switchBodyHull(laneSamples) : null;
 
   // Bounding box over all body outline points.
   const allX: number[] = [];
@@ -61,7 +60,14 @@ function Thumb({ def }: { def: TrackDef }) {
     <svg width={W} height={H} className="thumb">
       {isSwitch ? (
         <>
-          <path d={toPath(hullBody!)} fill={WOOD} stroke={WOOD_EDGE} strokeWidth={1} />
+          {/* Stroke pass (below fills) */}
+          {bodies.map((body, i) => (
+            <path key={`s${i}`} d={toPath(body)} fill="none" stroke={WOOD_EDGE} strokeWidth={2} />
+          ))}
+          {/* Fill pass (covers interior strokes) */}
+          {bodies.map((body, i) => (
+            <path key={`f${i}`} d={toPath(body)} fill={WOOD} stroke="none" />
+          ))}
           {laneSamples.map((samp, i) => (
             <g key={i}>
               {([1, -1] as const).map((side) => (

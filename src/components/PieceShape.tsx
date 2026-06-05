@@ -4,7 +4,7 @@ import { useStore } from "../state/store";
 import { defOf, type PlacedPiece } from "../track/placed";
 import { portsForDef, type TrackDef } from "../track/defs";
 import { poseAlong, sampleChain, totalLength } from "../geometry";
-import { bodyPolygon, groovePolyline, switchBodyHull } from "../track/render";
+import { bodyPolygon, groovePolyline } from "../track/render";
 import { Connector } from "./Connector";
 
 const WOOD_EDGE = "#8a6a3a";
@@ -52,14 +52,26 @@ export function PieceShape({
     >
       {isSwitch ? (
         <>
-          {/* Single unified body — convex hull of all lane outlines */}
-          <Line
-            points={switchBodyHull(allSamples!)}
-            closed
-            fill={wood}
-            stroke={isSelected ? SELECTED : WOOD_EDGE}
-            strokeWidth={isSelected ? 4 : 2}
-          />
+          {/* Pass 1: strokes drawn below fills; interior strokes get covered by lane fills */}
+          {allSamples!.map((samples, i) => (
+            <Line
+              key={`s${i}`}
+              points={bodyPolygon(samples)}
+              closed
+              stroke={isSelected ? SELECTED : WOOD_EDGE}
+              strokeWidth={isSelected ? 8 : 4}
+            />
+          ))}
+          {/* Pass 2: fills covering interiors (hides interior stroke segments from pass 1) */}
+          {allSamples!.map((samples, i) => (
+            <Line
+              key={`f${i}`}
+              points={bodyPolygon(samples)}
+              closed
+              fill={wood}
+              strokeWidth={0}
+            />
+          ))}
           {/* Grooves gouged through all lanes */}
           {allSamples!.flatMap((samples, laneIndex) => {
             const isActiveBranch = activeLane === undefined || activeLane === laneIndex;
