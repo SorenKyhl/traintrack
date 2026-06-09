@@ -20,7 +20,8 @@ export interface WorldPort extends PortGeom {
 
 /** Transform a local pose into world space, applying flip, rotation, translation. */
 export function transformPose(piece: PlacedPiece, p: Pose): Pose {
-  let { x, y } = p;
+  const x = p.x;
+  let y = p.y;
   let h = p.heading;
   if (piece.flipped) {
     y = -y;

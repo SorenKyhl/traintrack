@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import { DEFAULT_SCALE, DEFAULT_SPEED } from "../track/constants";
+import {
+  DEFAULT_SCALE,
+  DEFAULT_SPEED,
+  RELAX_ANIM_MS,
+  SNAP_CAPTURE_MIN,
+  SNAP_CAPTURE_RADIUS,
+  SNAP_CAPTURE_SCREEN_PX,
+} from "../track/constants";
 import { DEF_BY_ID, portsForDef } from "../track/defs";
 import {
   defOf,
@@ -8,11 +15,17 @@ import {
   worldPorts,
   type PlacedPiece,
 } from "../track/placed";
-import { buildConnections, findSnap, portKey, type ConnectionMap } from "../network/connections";
+import {
+  buildConnections,
+  findSnap,
+  portKey,
+  type ConnectionMap,
+  type SnapCandidate,
+} from "../network/connections";
 import { closeWithFlex, relaxLayout, intendedConnectionCount } from "../network/relax";
 import { computeLevels } from "../network/levels";
 import { advance, makeCars, pieceLookup, type Cursor, type Train } from "../train";
-import { dist } from "../geometry";
+import { angleDiff, dist } from "../geometry";
 import { writeSlot, getSlot } from "./saves";
 
 const ENGINE_COLORS = ["#1565c0", "#c62828", "#2e7d32", "#6a1b9a", "#ef6c00"];
@@ -39,6 +52,9 @@ interface StoreState {
   speed: number;
   view: View;
   deleteArmed: boolean; // true while a dragged piece is hovering the palette (release = delete)
+  // Ghost pose shown while a dragged piece is near a free compatible port. The
+  // piece itself follows the cursor; the snap is only committed on release.
+  snapPreview: ({ pieceId: string } & SnapCandidate) | null;
 
   addPiece: (defId: string, x: number, y: number) => void;
   movePiece: (id: string, x: number, y: number) => void;
@@ -73,6 +89,67 @@ function derive(pieces: PlacedPiece[]): { connections: ConnectionMap; levels: Ma
   return { connections, levels: computeLevels(pieces, connections) };
 }
 
+type SetState = (partial: Partial<StoreState>) => void;
+
+let animRaf = 0;
+function cancelAnim(): void {
+  if (animRaf) {
+    cancelAnimationFrame(animRaf);
+    animRaf = 0;
+  }
+}
+
+/**
+ * Tween piece poses from their current values to `target` over RELAX_ANIM_MS so
+ * snap/relax corrections read as the track flexing into place rather than
+ * teleporting. Connections and levels are derived from the final poses and
+ * committed when the tween lands; any user mutation cancels an in-flight tween.
+ */
+function animatePiecesTo(set: SetState, from: PlacedPiece[], target: PlacedPiece[]): void {
+  cancelAnim();
+  const final = { pieces: target, ...derive(target) };
+  const fromById = new Map(from.map((p) => [p.id, p]));
+  let maxMove = 0;
+  for (const p of target) {
+    const f = fromById.get(p.id);
+    if (!f) continue;
+    maxMove = Math.max(
+      maxMove,
+      Math.abs(p.x - f.x),
+      Math.abs(p.y - f.y),
+      Math.abs(angleDiff(p.rotation, f.rotation)) * 100, // ~mm at a 100mm lever arm
+    );
+  }
+  if (maxMove < 0.5) {
+    set(final);
+    return;
+  }
+  const t0 = performance.now();
+  const step = (now: number): void => {
+    const t = Math.min(1, (now - t0) / RELAX_ANIM_MS);
+    if (t >= 1) {
+      animRaf = 0;
+      set(final);
+      return;
+    }
+    const e = 1 - (1 - t) ** 3; // ease-out cubic
+    set({
+      pieces: target.map((p) => {
+        const f = fromById.get(p.id);
+        if (!f) return p;
+        return {
+          ...p,
+          x: f.x + (p.x - f.x) * e,
+          y: f.y + (p.y - f.y) * e,
+          rotation: f.rotation + angleDiff(p.rotation, f.rotation) * e,
+        };
+      }),
+    });
+    animRaf = requestAnimationFrame(step);
+  };
+  animRaf = requestAnimationFrame(step);
+}
+
 export const useStore = create<StoreState>((set, get) => ({
   pieces: [],
   trains: [],
@@ -83,67 +160,84 @@ export const useStore = create<StoreState>((set, get) => ({
   speed: DEFAULT_SPEED,
   view: { scale: DEFAULT_SCALE, x: 360, y: 280 },
   deleteArmed: false,
+  snapPreview: null,
 
   addPiece: (defId, x, y) => {
+    cancelAnim();
     if (!DEF_BY_ID[defId]) return;
     const piece: PlacedPiece = { id: newId("piece"), defId, x, y, rotation: 0, flipped: false, switchState: 0 };
     const snap = findSnap(piece, get().pieces);
-    if (snap) Object.assign(piece, snap);
+    if (snap) {
+      piece.x = snap.x;
+      piece.y = snap.y;
+      piece.rotation = snap.rotation;
+    }
     // Drop it, then let the rest of the layout flex to close any near-miss joint
     // (e.g. dropping the last piece into a loop). The new piece stays put.
-    const pieces = closeWithFlex([...get().pieces, piece], piece.id);
-    set({ pieces, ...derive(pieces), selectedId: piece.id });
+    const dropped = [...get().pieces, piece];
+    set({ pieces: dropped, ...derive(dropped), selectedId: piece.id });
+    animatePiecesTo(set, dropped, closeWithFlex(dropped, piece.id));
   },
 
   movePiece: (id, x, y) => {
+    cancelAnim();
     const pieces = get().pieces.map((p) => (p.id === id ? { ...p, x, y } : p));
     set({ pieces });
   },
 
-  // Live drag: follow the pointer, but click into a connected pose (position +
-  // rotation) whenever a free compatible joint is within capture range.
+  // Live drag: the piece follows the pointer faithfully. When a free compatible
+  // joint is in capture range we only publish a ghost preview of the snapped
+  // pose (`snapPreview`); the snap is committed on release in endDrag. Capture
+  // range is screen-space so it feels the same at any zoom, and the previous
+  // preview's key gives findSnap hysteresis so the ghost never flickers between
+  // rival ports.
   dragMove: (id, x, y) => {
-    const pieces = get().pieces;
+    cancelAnim();
+    const prev = get();
+    const pieces = prev.pieces.map((p) => (p.id === id ? { ...p, x, y } : p));
     const piece = pieces.find((p) => p.id === id);
     if (!piece) return;
-    const moved = { ...piece, x, y };
-    const others = pieces.filter((p) => p.id !== id);
-    // Interior pieces of a relaxed loop have ≥ 2 intended connections. Snapping
-    // during drag causes them to flicker between their two neighbors as the cursor
-    // moves slightly. Suppress snap until the piece has been pulled far enough
-    // that it no longer has multiple intended connections.
-    if (intendedConnectionCount(id, pieces) >= 2) {
-      set({ pieces: pieces.map((p) => (p.id === id ? moved : p)) });
-      return;
+    let snapPreview: StoreState["snapPreview"] = null;
+    // Interior pieces of a relaxed loop have ≥ 2 intended connections — they are
+    // seated, so previewing a single-port snap would only suggest breaking the
+    // other joint. Preview resumes once the piece is pulled clear.
+    if (intendedConnectionCount(id, pieces) < 2) {
+      const captureRadius = Math.min(
+        SNAP_CAPTURE_RADIUS,
+        Math.max(SNAP_CAPTURE_MIN, SNAP_CAPTURE_SCREEN_PX / prev.view.scale),
+      );
+      const stickyKey = prev.snapPreview?.pieceId === id ? prev.snapPreview.key : undefined;
+      const snap = findSnap(piece, pieces.filter((p) => p.id !== id), { captureRadius, stickyKey });
+      if (snap) snapPreview = { pieceId: id, ...snap };
     }
-    const snap = findSnap(moved, others);
-    const result = snap ? { ...moved, ...snap } : moved;
-    set({ pieces: pieces.map((p) => (p.id === id ? result : p)) });
+    set({ pieces, snapPreview });
   },
 
   endDrag: (id) => {
-    const pieces = get().pieces;
+    cancelAnim();
+    const { pieces, snapPreview } = get();
     const piece = pieces.find((p) => p.id === id);
     if (!piece) return;
-    const others = pieces.filter((p) => p.id !== id);
-    const snap = findSnap(piece, others);
-    let snapped: PlacedPiece[];
-    if (snap) {
-      const candidate = pieces.map((p) => (p.id === id ? { ...piece, ...snap } : p));
+    // Commit the previewed snap (the ghost the user saw is the single source of
+    // truth for the drop pose).
+    let snapped = pieces;
+    if (snapPreview && snapPreview.pieceId === id) {
+      const candidate = pieces.map((p) =>
+        p.id === id ? { ...p, x: snapPreview.x, y: snapPreview.y, rotation: snapPreview.rotation } : p,
+      );
       // Use loose-tolerance intended count (same as flex solver) rather than strict
       // connection count. Strict count misses joints that the solver relaxed to
       // 10-20mm — within flex range but outside the 9mm strict tolerance — causing
       // the guard to incorrectly allow a snap that breaks the intended connection.
       const before = intendedConnectionCount(id, pieces);
       const after = intendedConnectionCount(id, candidate);
-      snapped = after >= before ? candidate : pieces;
-    } else {
-      snapped = pieces;
+      if (after >= before) snapped = candidate;
     }
     // Hold the piece the user dropped fixed and flex the rest of the layout to
     // pull any near-miss joints shut -- this is what lets a loop actually close.
     const next = closeWithFlex(snapped, id);
-    set({ pieces: next, ...derive(next) });
+    set({ snapPreview: null });
+    animatePiecesTo(set, pieces, next);
   },
 
   select: (id) => set({ selectedId: id }),
@@ -201,12 +295,14 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   deletePiece: (id) => {
+    cancelAnim();
     const pieces = get().pieces.filter((p) => p.id !== id);
     set({
       pieces,
       ...derive(pieces),
       selectedId: get().selectedId === id ? null : get().selectedId,
       deleteArmed: false,
+      snapPreview: null,
       trains: get().trains.filter((t) => pieces.some((p) => p.id === t.cursor.pieceId)),
     });
   },
@@ -256,14 +352,17 @@ export const useStore = create<StoreState>((set, get) => ({
   setView: (v) => set({ view: { ...get().view, ...v } }),
 
   relax: () => {
+    cancelAnim();
     const { pieces, selectedId } = get();
     if (pieces.length === 0) return;
     const pinnedId = selectedId ?? pieces[0].id;
-    const next = relaxLayout(pieces, pinnedId);
-    set({ pieces: next, ...derive(next) });
+    animatePiecesTo(set, pieces, relaxLayout(pieces, pinnedId));
   },
 
-  clear: () => set({ pieces: [], trains: [], connections: new Map(), levels: new Map(), selectedId: null, running: false }),
+  clear: () => {
+    cancelAnim();
+    set({ pieces: [], trains: [], connections: new Map(), levels: new Map(), selectedId: null, running: false, snapPreview: null });
+  },
 
   tick: (dt) => {
     const state = get();
@@ -304,9 +403,10 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   loadSlot: (id) => {
+    cancelAnim();
     const slot = getSlot(id);
     if (!slot) return;
-    set({ pieces: slot.pieces, trains: slot.trains, ...derive(slot.pieces), selectedId: null });
+    set({ pieces: slot.pieces, trains: slot.trains, ...derive(slot.pieces), selectedId: null, snapPreview: null });
   },
 
   exportJSON: () => JSON.stringify({ pieces: get().pieces, trains: get().trains } satisfies LayoutSnapshot, null, 2),
@@ -315,11 +415,13 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const snap = JSON.parse(json) as LayoutSnapshot;
       if (!Array.isArray(snap.pieces)) return;
+      cancelAnim();
       set({
         pieces: snap.pieces,
         trains: snap.trains ?? [],
         ...derive(snap.pieces),
         selectedId: null,
+        snapPreview: null,
       });
     } catch {
       /* ignore */

@@ -1,10 +1,12 @@
-import { angleDiff, dist } from "../geometry";
+import { angleDiff, DEG, dist } from "../geometry";
 import {
   FLEX_CAPTURE_RADIUS,
   FLEX_CAPTURE_ANGLE_DEG,
   FLEX_GN_PASSES,
   FLEX_REGULARIZATION,
   FLEX_ANGLE_WEIGHT,
+  FLEX_GAP_DEADZONE,
+  FLEX_ANGLE_DEADZONE_DEG,
 } from "../track/constants";
 import { worldPorts, type PlacedPiece, type WorldPort } from "../track/placed";
 import { buildConnections, type ConnectionMap } from "./connections";
@@ -146,6 +148,12 @@ function accumRow(
  * The minimum-norm correction distributes the closure error as small rotations
  * spread evenly around the loop, so pieces leave the 45° grid and the loop
  * visibly flexes into place.
+ *
+ * Residuals are hinged (dead-zoned): a joint already seated within
+ * FLEX_GAP_DEADZONE / FLEX_ANGLE_DEADZONE_DEG rests in its play and exerts no
+ * pull, and only the error *beyond* the dead zone is penalized. Seated joints
+ * therefore never get re-tensioned — relaxation stays local to the joints that
+ * actually need to close, and running it twice changes nothing.
  */
 function solveFlex(
   pieces: PlacedPiece[],
@@ -183,6 +191,15 @@ function solveFlex(
       const wB = worldPorts(pB).find((wp) => wp.id === j.b.portId);
       if (!wA || !wB) continue;
 
+      const errVX = wB.pos.x - wA.pos.x;
+      const errVY = wB.pos.y - wA.pos.y;
+      const gap = Math.hypot(errVX, errVY);
+      const rawT = angleDiff(wB.angle + Math.PI, wA.angle);
+      const angDead = FLEX_ANGLE_DEADZONE_DEG * DEG;
+      const posActive = gap > FLEX_GAP_DEADZONE;
+      const angActive = Math.abs(rawT) > angDead;
+      if (!posActive && !angActive) continue; // seated within its play: no force
+
       // Lever arms: world offset of each port from its piece origin
       const rxA = wA.pos.x - pA.x, ryA = wA.pos.y - pA.y;
       const rxB = wB.pos.x - pB.x, ryB = wB.pos.y - pB.y;
@@ -209,13 +226,15 @@ function solveFlex(
         rowT.push([b3 + 2, -FLEX_ANGLE_WEIGHT]);
       }
 
-      const errX = wB.pos.x - wA.pos.x;
-      const errY = wB.pos.y - wA.pos.y;
-      const errT = angleDiff(wB.angle + Math.PI, wA.angle) * FLEX_ANGLE_WEIGHT;
-
-      accumRow(AtA, Atc, n, rowX, errX);
-      accumRow(AtA, Atc, n, rowY, errY);
-      accumRow(AtA, Atc, n, rowT, errT);
+      // Hinge: drive the error only down to the dead-zone boundary, not to zero.
+      if (posActive) {
+        const s = (gap - FLEX_GAP_DEADZONE) / gap;
+        accumRow(AtA, Atc, n, rowX, errVX * s);
+        accumRow(AtA, Atc, n, rowY, errVY * s);
+      }
+      if (angActive) {
+        accumRow(AtA, Atc, n, rowT, (rawT - Math.sign(rawT) * angDead) * FLEX_ANGLE_WEIGHT);
+      }
     }
 
     const u = solveSPD(AtA, Atc, n);

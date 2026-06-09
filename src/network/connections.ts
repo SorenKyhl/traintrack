@@ -5,7 +5,10 @@
 import {
   JOINT_ANGLE_TOLERANCE_DEG,
   JOINT_GAP_TOLERANCE,
+  SNAP_ANGLE_WEIGHT,
   SNAP_CAPTURE_RADIUS,
+  SNAP_RELEASE_FACTOR,
+  SNAP_STICKY_ADVANTAGE,
 } from "../track/constants";
 import { angleDiff, DEG, dist } from "../geometry";
 import { portsForDef } from "../track/defs";
@@ -56,15 +59,35 @@ function rot(x: number, y: number, r: number): { x: number; y: number } {
   return { x: x * Math.cos(r) - y * Math.sin(r), y: x * Math.sin(r) + y * Math.cos(r) };
 }
 
+export interface SnapCandidate {
+  x: number;
+  y: number;
+  rotation: number;
+  /** Stable identity of this mating (dragged port -> target port), used for drag hysteresis. */
+  key: string;
+  /** World position of the target port, for preview highlighting. */
+  targetPos: { x: number; y: number };
+  score: number;
+}
+
 /**
- * Find the best exact-snap transform for a dragged piece: align one of its ports
- * onto a nearby free, compatible port of another piece. Returns the adjusted
- * {x, y, rotation} or null if nothing is in capture range.
+ * Find the best snap pose for a dragged piece: align one of its ports onto a
+ * nearby free, compatible port of another piece. Candidates are scored by
+ * gap + required rotation change, so the mating that respects how the user is
+ * currently holding the piece wins over a merely-nearer port.
+ *
+ * Pass the previous result's `key` as `stickyKey` for hysteresis during a drag:
+ * the held target stays captured out to SNAP_RELEASE_FACTOR × captureRadius and
+ * only loses to a challenger that beats its score decisively
+ * (SNAP_STICKY_ADVANTAGE), so the snap never flickers between rival ports.
  */
 export function findSnap(
   piece: PlacedPiece,
   others: PlacedPiece[],
-): { x: number; y: number; rotation: number } | null {
+  opts?: { captureRadius?: number; stickyKey?: string },
+): SnapCandidate | null {
+  const captureRadius = opts?.captureRadius ?? SNAP_CAPTURE_RADIUS;
+  const releaseRadius = captureRadius * SNAP_RELEASE_FACTOR;
   const occupied = new Set<string>();
   const conns = buildConnections(others);
   for (const k of conns.keys()) occupied.add(k);
@@ -76,7 +99,8 @@ export function findSnap(
   const draggedWorld = worldPorts(piece);
   const defPorts = portsForDef(defOf(piece));
 
-  let best: { x: number; y: number; rotation: number; d: number } | null = null;
+  let best: SnapCandidate | null = null;
+  let sticky: SnapCandidate | null = null;
 
   for (let idx = 0; idx < draggedWorld.length; idx++) {
     const dw = draggedWorld[idx];
@@ -90,16 +114,29 @@ export function findSnap(
     }
     for (const t of targets) {
       if (dw.gender === t.gender) continue;
+      const key = `${dw.id}->${portKey(t.pieceId, t.id)}`;
+      const isSticky = key === opts?.stickyKey;
       const d = dist(dw.pos, t.pos);
-      if (d > SNAP_CAPTURE_RADIUS) continue;
+      if (d > (isSticky ? releaseRadius : captureRadius)) continue;
       // Solve transform so the dragged port lands exactly anti-parallel on t.
       const rotation = t.angle + Math.PI - lh;
       const offset = rot(lx, ly, rotation);
-      const x = t.pos.x - offset.x;
-      const y = t.pos.y - offset.y;
-      if (!best || d < best.d) best = { x, y, rotation, d };
+      const score = d + Math.abs(angleDiff(rotation, piece.rotation)) * SNAP_ANGLE_WEIGHT;
+      const cand: SnapCandidate = {
+        x: t.pos.x - offset.x,
+        y: t.pos.y - offset.y,
+        rotation,
+        key,
+        targetPos: { x: t.pos.x, y: t.pos.y },
+        score,
+      };
+      if (isSticky) sticky = cand;
+      if (!best || score < best.score) best = cand;
     }
   }
 
-  return best ? { x: best.x, y: best.y, rotation: best.rotation } : null;
+  if (sticky && best && best.key !== sticky.key && best.score >= sticky.score * SNAP_STICKY_ADVANTAGE) {
+    return sticky;
+  }
+  return best;
 }

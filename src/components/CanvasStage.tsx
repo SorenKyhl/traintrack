@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Stage, Layer, Line, Group } from "react-konva";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Stage, Layer, Line, Group, Circle } from "react-konva";
 import type Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useStore } from "../state/store";
@@ -16,6 +16,14 @@ export interface DropPayload {
 const GRID = 144; // one standard straight
 const CLICK_THRESHOLD = 4; // world mm of movement below which a press counts as a click
 
+// Is a screen point over the left palette (the delete drop-zone)?
+const overPalette = (clientX: number, clientY: number) => {
+  const el = document.querySelector(".palette");
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+};
+
 export function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -27,6 +35,7 @@ export function CanvasStage() {
   const pieces = useStore((s) => s.pieces);
   const trains = useStore((s) => s.trains);
   const levels = useStore((s) => s.levels);
+  const snapPreview = useStore((s) => s.snapPreview);
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
 
@@ -53,6 +62,25 @@ export function CanvasStage() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
+  const finishDrag = useCallback(() => {
+    const d = dragRef.current;
+    if (!d) return;
+    dragRef.current = null;
+    setPanEnabled(true);
+    const s = useStore.getState();
+    s.setDeleteArmed(false);
+    if (d.moved && overPalette(lastClient.current.x, lastClient.current.y)) {
+      // Dropped back over the palette -> delete it.
+      s.deletePiece(d.id);
+    } else if (d.moved) {
+      s.endDrag(d.id);
+    } else {
+      // A click (no drag): toggle a switch's active branch.
+      const piece = s.pieces.find((p) => p.id === d.id);
+      if (piece && DEF_BY_ID[piece.defId].category === "switch") s.toggleSwitch(d.id);
+    }
+  }, []);
+
   // Release a drag even if the mouse comes up outside the stage. Track the latest
   // pointer position so we can tell, on release, whether it ended over the palette
   // (which deletes the dragged piece — "drag back to the sidebar to delete").
@@ -75,17 +103,9 @@ export function CanvasStage() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("touchmove", onTouch);
     };
-  }, []);
+  }, [finishDrag]);
 
   const worldPointer = () => stageRef.current?.getRelativePointerPosition() ?? null;
-
-  // Is a screen point over the left palette (the delete drop-zone)?
-  const overPalette = (clientX: number, clientY: number) => {
-    const el = document.querySelector(".palette");
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
-    return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
-  };
 
   const startPieceDrag = (id: string, e: KonvaEventObject<MouseEvent>) => {
     e.cancelBubble = true;
@@ -104,28 +124,14 @@ export function CanvasStage() {
     if (!wp) return;
     const nx = wp.x - d.gx;
     const ny = wp.y - d.gy;
-    const p = useStore.getState().pieces.find((x) => x.id === d.id);
-    if (p && (Math.abs(p.x - nx) > CLICK_THRESHOLD || Math.abs(p.y - ny) > CLICK_THRESHOLD)) d.moved = true;
-    useStore.getState().dragMove(d.id, nx, ny);
-  };
-
-  const finishDrag = () => {
-    const d = dragRef.current;
-    if (!d) return;
-    dragRef.current = null;
-    setPanEnabled(true);
-    const s = useStore.getState();
-    s.setDeleteArmed(false);
-    if (d.moved && overPalette(lastClient.current.x, lastClient.current.y)) {
-      // Dropped back over the palette -> delete it.
-      s.deletePiece(d.id);
-    } else if (d.moved) {
-      s.endDrag(d.id);
-    } else {
-      // A click (no drag): toggle a switch's active branch.
-      const piece = s.pieces.find((p) => p.id === d.id);
-      if (piece && DEF_BY_ID[piece.defId].category === "switch") s.toggleSwitch(d.id);
+    // Don't touch the store until the press has clearly become a drag — a plain
+    // click (with pointer jitter) must never move a piece off its relaxed pose.
+    if (!d.moved) {
+      const p = useStore.getState().pieces.find((x) => x.id === d.id);
+      if (!p || (Math.abs(p.x - nx) <= CLICK_THRESHOLD && Math.abs(p.y - ny) <= CLICK_THRESHOLD)) return;
+      d.moved = true;
     }
+    useStore.getState().dragMove(d.id, nx, ny);
   };
 
   const onWheel = (e: KonvaEventObject<WheelEvent>) => {
@@ -181,6 +187,27 @@ export function CanvasStage() {
     );
   }
 
+  // Ghost preview of the snapped pose for the piece being dragged, plus a
+  // highlight ring on the target port. The snap commits on release.
+  const previewPiece = snapPreview ? pieces.find((p) => p.id === snapPreview.pieceId) : undefined;
+  const ghost = snapPreview && previewPiece && (
+    <Group opacity={0.4} listening={false}>
+      <PieceShape
+        piece={{ ...previewPiece, x: snapPreview.x, y: snapPreview.y, rotation: snapPreview.rotation }}
+        level={levelOf(previewPiece.id)}
+        onStartDrag={() => {}}
+      />
+      <Circle
+        x={snapPreview.targetPos.x}
+        y={snapPreview.targetPos.y}
+        radius={12}
+        stroke="#ff8f00"
+        strokeWidth={3}
+        opacity={0.9}
+      />
+    </Group>
+  );
+
   return (
     <div ref={containerRef} className="canvas-area" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <Stage
@@ -205,7 +232,10 @@ export function CanvasStage() {
         <Layer listening={false}>
           <BackgroundGrid w={size.w} h={size.h} view={view} />
         </Layer>
-        <Layer>{tiers}</Layer>
+        <Layer>
+          {tiers}
+          {ghost}
+        </Layer>
       </Stage>
     </div>
   );

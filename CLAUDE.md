@@ -38,15 +38,15 @@ State is entirely in the zustand store. React components only read store slices 
 2D vector + pose math. Screen convention: x right, y down, heading = direction of travel. `Segment` is either `{kind:"line"}` or `{kind:"arc"}`. Key functions: `poseAlong()`, `sampleChain()`, `angleDiff()`.
 
 **`src/network/`**
-- `connections.ts` — `buildConnections()`: greedy nearest-compatible matching. Two ports connect when they are opposite gender, within `JOINT_GAP_TOLERANCE` (9 mm), and anti-parallel within `JOINT_ANGLE_TOLERANCE_DEG` (11°). `findSnap()` computes the rigid transform to align a dragged piece's port onto a free target port.
-- `relax.ts` — Gauss–Newton loop-closure solver. `closeWithFlex()` is called on every drop: it collects "intended joints" (looser tolerance than a real connection) and solves for the minimum-norm pose perturbation that pulls them shut. The result is only kept if it gained a strict connection, so innocent drags never disturb the layout. `relaxLayout()` is the user-triggered unconditional version.
+- `connections.ts` — `buildConnections()`: greedy nearest-compatible matching. Two ports connect when they are opposite gender, within `JOINT_GAP_TOLERANCE` (9 mm), and anti-parallel within `JOINT_ANGLE_TOLERANCE_DEG` (11°). `findSnap()` computes the rigid transform to align a dragged piece's port onto a free target port; candidates are scored by gap + required rotation, and a `stickyKey` gives drag-time hysteresis so the chosen target doesn't flicker between rival ports.
+- `relax.ts` — Gauss–Newton loop-closure solver with hinged (dead-zone) residuals: joints already seated within `FLEX_GAP_DEADZONE`/`FLEX_ANGLE_DEADZONE_DEG` exert no pull, so relaxation is local and idempotent. `closeWithFlex()` is called on every drop: it collects "intended joints" (looser tolerance than a real connection) and solves for the minimum-norm pose perturbation that pulls them shut. The result is only kept if it gained a strict connection, so innocent drags never disturb the layout. `relaxLayout()` is the user-triggered unconditional version. `scripts/sanity-flex.ts` (run with `npx tsx`) asserts the solver invariants.
 - `levels.ts` — propagates `levelOffset` values across the connection graph to assign each piece an absolute integer elevation level, used for correct z-order rendering.
 
 **`src/train/index.ts`**  
 `advance()` walks a `Cursor` (pieceId + laneIndex + arc-length s + direction) along the network, following `ConnectionMap` across joints and `switchState` at branches. The store's `tick()` calls `advance()` every rAF and auto-throws switch points to match the route the engine actually took.
 
 **`src/state/store.ts`**  
-Single zustand store. `derive()` recomputes `connections` and `levels` after any layout change. Persistence: `save`/`load` via `localStorage` (key `traintrack-layout-v1`), `exportJSON`/`importJSON` for file-based exchange.
+Single zustand store. `derive()` recomputes `connections` and `levels` after any layout change. During a drag the piece follows the pointer; a candidate snap is published as `snapPreview` (rendered as a ghost) and committed in `endDrag`. Pose corrections from snap/flex are tweened over `RELAX_ANIM_MS` via `animatePiecesTo()`. Persistence: `save`/`load` via `localStorage` (key `traintrack-layout-v1`), `exportJSON`/`importJSON` for file-based exchange.
 
 **`src/components/`**  
 react-konva canvas. `CanvasStage` owns the rAF loop, pan/zoom, and drag orchestration. `PieceShape` renders a single placed piece (track body + connectors). `TrainShape` renders car rectangles. `Palette` is the left sidebar / drop-zone. `Toolbar` is the top bar (rotate/flip/delete/play/speed/save/load).
