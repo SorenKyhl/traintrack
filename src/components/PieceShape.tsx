@@ -4,7 +4,7 @@ import { useStore } from "../state/store";
 import { defOf, type PlacedPiece } from "../track/placed";
 import { portsForDef, type TrackDef } from "../track/defs";
 import { poseAlong, sampleChain, totalLength } from "../geometry";
-import { bodyPolygon, groovePolyline } from "../track/render";
+import { bodyPolygon, groovePolyline, unionBodyPolygons } from "../track/render";
 import { Connector } from "./Connector";
 
 const WOOD_EDGE = "#8a6a3a";
@@ -40,6 +40,7 @@ export function PieceShape({
   const wood = woodAt(level);
   const isSwitch = def.category === "switch";
   const allSamples = isSwitch ? def.lanes.map((lane) => sampleChain(lane.segments, lane.start)) : null;
+  const switchBodyPoly = isSwitch ? unionBodyPolygons(allSamples!) : null;
 
   return (
     <Group
@@ -52,26 +53,14 @@ export function PieceShape({
     >
       {isSwitch ? (
         <>
-          {/* Pass 1: strokes drawn below fills; interior strokes get covered by lane fills */}
-          {allSamples!.map((samples, i) => (
-            <Line
-              key={`s${i}`}
-              points={bodyPolygon(samples)}
-              closed
-              stroke={isSelected ? SELECTED : WOOD_EDGE}
-              strokeWidth={isSelected ? 8 : 4}
-            />
-          ))}
-          {/* Pass 2: fills covering interiors (hides interior stroke segments from pass 1) */}
-          {allSamples!.map((samples, i) => (
-            <Line
-              key={`f${i}`}
-              points={bodyPolygon(samples)}
-              closed
-              fill={wood}
-              strokeWidth={0}
-            />
-          ))}
+          {/* Single unified body polygon — no interior strokes at lane junctions */}
+          <Line
+            points={switchBodyPoly!}
+            closed
+            fill={wood}
+            stroke={isSelected ? SELECTED : WOOD_EDGE}
+            strokeWidth={isSelected ? 4 : 2}
+          />
           {/* Grooves gouged through all lanes */}
           {allSamples!.flatMap((samples, laneIndex) => {
             const isActiveBranch = activeLane === undefined || activeLane === laneIndex;
@@ -81,7 +70,7 @@ export function PieceShape({
                 points={groovePolyline(samples, side)}
                 stroke={isActiveBranch ? GROOVE : "#9a8050"}
                 strokeWidth={6}
-                lineCap="round"
+                lineCap="butt"
                 lineJoin="round"
               />
             ));
@@ -119,7 +108,7 @@ export function PieceShape({
                   points={groovePolyline(samples, side)}
                   stroke={GROOVE}
                   strokeWidth={6}
-                  lineCap="round"
+                  lineCap="butt"
                   lineJoin="round"
                 />
               ))}
@@ -176,20 +165,22 @@ function Chevrons({ lane }: { lane: ReturnType<typeof defOf>["lanes"][number] })
   );
 }
 
-/** Red rounded-rectangle direction indicator, positioned ~70% along the active lane. */
+/**
+ * Red indicator centered at ~25% along the active lane — placed using the real
+ * arc pose so it stays on the track centerline for both straight and curved branches.
+ */
 function SwitchIndicator({ def, activeLaneIndex }: { def: TrackDef; activeLaneIndex: number }) {
   const lane = def.lanes[activeLaneIndex];
   const len = totalLength(lane.segments);
-  const dist = len * 0.7;
-  const pose = poseAlong(lane.segments, lane.start, dist);
+  const pose = poseAlong(lane.segments, lane.start, len * 0.25);
   return (
     <Group x={pose.x} y={pose.y} rotation={(pose.heading * 180) / Math.PI}>
       <Rect
-        x={-16}
-        y={-8}
-        width={32}
-        height={16}
-        cornerRadius={7}
+        x={-14}
+        y={-5}
+        width={28}
+        height={10}
+        cornerRadius={4}
         fill="#cc2200"
         stroke="#881500"
         strokeWidth={1.5}

@@ -1,6 +1,7 @@
 // Turn centerline samples into Konva point arrays: a body outline polygon and
 // the two recessed groove polylines.
 
+import { union as polyUnion } from "polygon-clipping";
 import { type Pose } from "../geometry";
 import { GROOVE_CENTER_OFFSET, TRACK_WIDTH } from "./constants";
 
@@ -24,6 +25,24 @@ export function bodyPolygon(samples: Pose[]): number[] {
     right.unshift(rx);
   }
   return [...left, ...right];
+}
+
+/**
+ * Union of multiple lane body polygons as a single flat [x,y,...] array.
+ * Used for switch/split pieces to stroke only the exterior boundary.
+ */
+export function unionBodyPolygons(allSamples: Pose[][]): number[] {
+  const rings = allSamples.map((samples) => {
+    const pts = bodyPolygon(samples);
+    const ring: [number, number][] = [];
+    for (let i = 0; i < pts.length; i += 2) ring.push([pts[i], pts[i + 1]]);
+    return [ring]; // Polygon = Ring[]
+  });
+  const [first, ...rest] = rings;
+  const result = polyUnion(first, ...rest);
+  if (!result.length || !result[0].length) return [];
+  // result[0][0] = outer ring of the first (and only) output polygon
+  return result[0][0].flatMap(([x, y]) => [x, y]);
 }
 
 /** A groove polyline (drawn as a thick dark stroke) offset from the centerline. */
