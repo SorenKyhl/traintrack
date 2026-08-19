@@ -163,9 +163,12 @@ export function CanvasStage() {
     else if (payload.kind === "train") s.addTrain(wx, wy, payload.length ?? 3);
   };
 
-  // Render bottom-up by elevation: at each level draw bodies, then male pegs
-  // (so pegs sit over sockets), then that level's trains — so a higher track and
-  // its trains cover anything passing underneath.
+  // Render bottom-up by elevation: at each level draw bodies, then that
+  // level's trains — so a higher track and its trains cover anything passing
+  // underneath. Male pegs are held back to a final global pass (see `pegs`
+  // below) so a peg always renders over the socket it plugs into, even when
+  // that socket belongs to a piece whose *other* end (e.g. an ascender's
+  // elevated end) puts it in a higher render tier.
   const levelOf = (id: string) => levels.get(id) ?? 0;
   const maxLevel = pieces.reduce((m, p) => Math.max(m, levelOf(p.id)), 0);
   const tiers = [];
@@ -177,15 +180,19 @@ export function CanvasStage() {
         {tierPieces.map((p) => (
           <PieceShape key={p.id} piece={p} level={L} onStartDrag={startPieceDrag} />
         ))}
-        {tierPieces.map((p) => (
-          <PiecePegs key={p.id} piece={p} />
-        ))}
         {tierTrains.map((t) => (
           <TrainShape key={t.id} train={t} />
         ))}
       </Group>,
     );
   }
+  const pegs = (
+    <Group listening={false}>
+      {pieces.map((p) => (
+        <PiecePegs key={p.id} piece={p} />
+      ))}
+    </Group>
+  );
 
   // Ghost preview of the snapped pose for the piece being dragged, plus a
   // highlight ring on the target port. The snap commits on release.
@@ -234,6 +241,7 @@ export function CanvasStage() {
         </Layer>
         <Layer>
           {tiers}
+          {pegs}
           {ghost}
         </Layer>
       </Stage>
