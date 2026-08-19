@@ -1,6 +1,7 @@
 import { Group, Line, Circle } from "react-konva";
 import { CONN, headCenterX, neckCorners } from "../track/connector";
 import type { PortGeom } from "../track/defs";
+import { PIECE_VISUAL_STYLE } from "../track/visual";
 
 const WOOD = "#c8a06a";
 const WOOD_EDGE = "#8a6a3a";
@@ -17,10 +18,15 @@ export function Connector({ port, selected }: { port: PortGeom; selected: boolea
     const edge = selected ? "#ff8f00" : WOOD_EDGE;
     return (
       <Group x={port.pos.x} y={port.pos.y} rotation={rotation}>
-        <Line points={neck} closed fill={WOOD} stroke={edge} strokeWidth={2} lineJoin="round" />
-        <Circle x={headX} y={0} radius={CONN.headR} fill={WOOD} stroke={edge} strokeWidth={2} />
+        <Line points={neck} closed fill={WOOD} stroke={edge} strokeWidth={PIECE_VISUAL_STYLE.connector.male.strokeWidth} lineJoin={PIECE_VISUAL_STYLE.connector.male.lineJoin} />
+        <Circle x={headX} y={0} radius={CONN.headR} fill={WOOD} stroke={edge} strokeWidth={PIECE_VISUAL_STYLE.connector.male.strokeWidth} />
         {/* subtle highlight on the peg head */}
-        <Circle x={headX - 1.5} y={-1.5} radius={CONN.headR * 0.4} fill="#d8b483" />
+        <Circle
+          x={headX + PIECE_VISUAL_STYLE.connector.male.highlightOffset[0]}
+          y={PIECE_VISUAL_STYLE.connector.male.highlightOffset[1]}
+          radius={CONN.headR * PIECE_VISUAL_STYLE.connector.male.highlightRadius}
+          fill="#d8b483"
+        />
       </Group>
     );
   }
@@ -35,8 +41,8 @@ export function Connector({ port, selected }: { port: PortGeom; selected: boolea
       rotation={rotation}
       clipFunc={(ctx) => ctx.rect(-1000, -1000, 1000, 2000)}
     >
-      <Line points={neck} closed fill={SOCKET} stroke={SOCKET_EDGE} strokeWidth={1.2} lineJoin="round" />
-      <Circle x={headX} y={0} radius={CONN.headR} fill={SOCKET} stroke={SOCKET_EDGE} strokeWidth={1.2} />
+      <Line points={neck} closed fill={SOCKET} stroke={SOCKET_EDGE} strokeWidth={PIECE_VISUAL_STYLE.connector.female.strokeWidth} lineJoin={PIECE_VISUAL_STYLE.connector.female.lineJoin} />
+      <Circle x={headX} y={0} radius={CONN.headR} fill={SOCKET} stroke={SOCKET_EDGE} strokeWidth={PIECE_VISUAL_STYLE.connector.female.strokeWidth} />
     </Group>
   );
 }

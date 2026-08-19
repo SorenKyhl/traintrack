@@ -1,7 +1,5 @@
-import { poseAlong, sampleChain, totalLength, type Pose } from "../geometry";
 import { DEFS, portsForDef, type Category, type PortGeom, type TrackDef } from "../track/defs";
-import { bodyPolygon, groovePolyline } from "../track/render";
-import { GROOVE_WIDTH } from "../track/constants";
+import { PIECE_VISUAL_STYLE, pieceVisual } from "../track/visual";
 import { CONN, headCenterX, neckCorners } from "../track/connector";
 import { useStore } from "../state/store";
 import type { DropPayload } from "./CanvasStage";
@@ -29,20 +27,11 @@ function Thumb({ def }: { def: TrackDef }) {
   const H = 56;
   const pad = 8;
   const isSwitch = def.category === "switch";
-  const laneSamples: Pose[][] = def.lanes.map((l) => sampleChain(l.segments, l.start, 7));
-  const bodies = laneSamples.map((s) => bodyPolygon(s));
+  const visual = pieceVisual(def);
 
-  // Bounding box over all body outline points.
-  const allX: number[] = [];
-  const allY: number[] = [];
-  for (const b of bodies) for (let i = 0; i < b.length; i += 2) {
-    allX.push(b[i]);
-    allY.push(b[i + 1]);
-  }
-  const minX = Math.min(...allX);
-  const maxX = Math.max(...allX);
-  const minY = Math.min(...allY);
-  const maxY = Math.max(...allY);
+  // The shared visual bounds include protruding connector heads, so no part of
+  // a straight or adapter icon is clipped by its thumbnail frame.
+  const { minX, maxX, minY, maxY } = visual.bounds;
   const s = Math.min((W - pad * 2) / Math.max(1, maxX - minX), (H - pad * 2) / Math.max(1, maxY - minY));
   const tx = (x: number) => (x - (minX + maxX) / 2) * s + W / 2;
   const ty = (y: number) => (y - (minY + maxY) / 2) * s + H / 2;
@@ -61,49 +50,44 @@ function Thumb({ def }: { def: TrackDef }) {
     <svg width={W} height={H} className="thumb">
       {isSwitch ? (
         <>
-          {/* Stroke pass (below fills) */}
-          {bodies.map((body, i) => (
-            <path key={`s${i}`} d={toPath(body)} fill="none" stroke={WOOD_EDGE} strokeWidth={2} />
-          ))}
-          {/* Fill pass (covers interior strokes) */}
-          {bodies.map((body, i) => (
-            <path key={`f${i}`} d={toPath(body)} fill={WOOD} stroke="none" />
-          ))}
-          {laneSamples.map((samp, i) => (
+          {/* The canvas uses one body for a switch, with no seams at the fork. */}
+          <path d={toPath(visual.switchBody!)} fill={WOOD} stroke={WOOD_EDGE} strokeWidth={PIECE_VISUAL_STYLE.body.strokeWidth * s} />
+          {visual.lanes.map((lane, i) => (
             <g key={i}>
-              {([1, -1] as const).map((side) => (
+              {lane.grooves.map((groove, grooveIndex) => (
                 <path
-                  key={side}
-                  d={toLine(groovePolyline(samp, side))}
+                  key={grooveIndex}
+                  d={toLine(groove)}
                   fill="none"
-                  stroke={GROOVE}
-                  strokeWidth={Math.max(1.2, GROOVE_WIDTH * s)}
-                  strokeLinecap="butt"
-                  strokeLinejoin="round"
+                  stroke={lane.active ? GROOVE : "#9a8050"}
+                  strokeWidth={PIECE_VISUAL_STYLE.groove.strokeWidth * s}
+                  strokeLinecap={PIECE_VISUAL_STYLE.groove.lineCap}
+                  strokeLinejoin={PIECE_VISUAL_STYLE.groove.lineJoin}
                 />
               ))}
             </g>
           ))}
-          <ThumbSwitchIndicator def={def} tx={tx} ty={ty} s={s} />
+          <ThumbSwitchIndicator marker={visual.switchMarker!} tx={tx} ty={ty} s={s} />
         </>
       ) : (
-        laneSamples.map((samp, i) => (
+        visual.lanes.map((lane, i) => (
           <g key={i}>
-            <path d={toPath(bodies[i])} fill={WOOD} stroke={WOOD_EDGE} strokeWidth={1} />
-            {([1, -1] as const).map((side) => (
+            <path d={toPath(lane.body)} fill={WOOD} stroke={WOOD_EDGE} strokeWidth={PIECE_VISUAL_STYLE.body.strokeWidth * s} />
+            {lane.grooves.map((groove, grooveIndex) => (
               <path
-                key={side}
-                d={toLine(groovePolyline(samp, side))}
+                key={grooveIndex}
+                d={toLine(groove)}
                 fill="none"
                 stroke={GROOVE}
-                strokeWidth={Math.max(1.2, GROOVE_WIDTH * s)}
-                strokeLinecap="butt"
-                strokeLinejoin="round"
+                strokeWidth={PIECE_VISUAL_STYLE.groove.strokeWidth * s}
+                strokeLinecap={PIECE_VISUAL_STYLE.groove.lineCap}
+                strokeLinejoin={PIECE_VISUAL_STYLE.groove.lineJoin}
               />
             ))}
           </g>
         ))
       )}
+      {visual.chevrons.length > 0 && <ThumbChevrons paths={visual.chevrons} tx={tx} ty={ty} s={s} />}
       {portsForDef(def).map((port) => (
         <ConnectorSvg key={port.id} port={port} tx={tx} ty={ty} s={s} />
       ))}
@@ -112,16 +96,13 @@ function Thumb({ def }: { def: TrackDef }) {
 }
 
 /** Red direction indicator for switch thumbnails (shows default lane 0 state). */
-function ThumbSwitchIndicator({ def, tx, ty, s }: { def: TrackDef; tx: (x: number) => number; ty: (y: number) => number; s: number }) {
-  const lane = def.lanes[0];
-  const len = totalLength(lane.segments);
-  const pose = poseAlong(lane.segments, lane.start, len * 0.7);
-  const cx = tx(pose.x);
-  const cy = ty(pose.y);
-  const angle = (pose.heading * 180) / Math.PI;
-  const w = 32 * s;
-  const h = 16 * s;
-  const rx = 7 * s;
+function ThumbSwitchIndicator({ marker, tx, ty, s }: { marker: { x: number; y: number; heading: number }; tx: (x: number) => number; ty: (y: number) => number; s: number }) {
+  const cx = tx(marker.x);
+  const cy = ty(marker.y);
+  const angle = (marker.heading * 180) / Math.PI;
+  const w = PIECE_VISUAL_STYLE.switchMarker.width * s;
+  const h = PIECE_VISUAL_STYLE.switchMarker.height * s;
+  const rx = PIECE_VISUAL_STYLE.switchMarker.cornerRadius * s;
   return (
     <rect
       x={cx - w / 2}
@@ -132,9 +113,18 @@ function ThumbSwitchIndicator({ def, tx, ty, s }: { def: TrackDef; tx: (x: numbe
       ry={rx}
       fill="#cc2200"
       stroke="#881500"
-      strokeWidth={Math.max(0.5, 1.5 * s)}
+      strokeWidth={PIECE_VISUAL_STYLE.switchMarker.strokeWidth * s}
       transform={`rotate(${angle.toFixed(1)}, ${cx.toFixed(1)}, ${cy.toFixed(1)})`}
     />
+  );
+}
+
+/** Match the uphill marks drawn on ascenders in the canvas. */
+function ThumbChevrons({ paths, tx, ty, s }: { paths: number[][]; tx: (x: number) => number; ty: (y: number) => number; s: number }) {
+  return (
+    <g fill="none" stroke="#7a5b30" strokeWidth={PIECE_VISUAL_STYLE.chevron.strokeWidth * s} strokeLinecap={PIECE_VISUAL_STYLE.chevron.lineCap} strokeLinejoin={PIECE_VISUAL_STYLE.chevron.lineJoin} opacity={PIECE_VISUAL_STYLE.chevron.opacity}>
+      {paths.map((points, i) => <path key={i} d={`M${tx(points[0]).toFixed(1)} ${ty(points[1]).toFixed(1)} L${tx(points[2]).toFixed(1)} ${ty(points[3]).toFixed(1)} L${tx(points[4]).toFixed(1)} ${ty(points[5]).toFixed(1)}`} />)}
+    </g>
   );
 }
 
@@ -146,13 +136,19 @@ function ConnectorSvg({ port, tx, ty, s }: { port: PortGeom; tx: (x: number) => 
   const map = (lx: number, ly: number) => { const [mx, my] = toMm(lx, ly); return `${tx(mx).toFixed(1)},${ty(my).toFixed(1)}`; };
   const neckPts = neckCorners(port.gender).map(([x, y]) => map(x, y)).join(" ");
   const [hx, hy] = toMm(headCenterX(port.gender), 0);
+  const [highlightX, highlightY] = toMm(
+    headCenterX(port.gender) + PIECE_VISUAL_STYLE.connector.male.highlightOffset[0],
+    PIECE_VISUAL_STYLE.connector.male.highlightOffset[1],
+  );
   const isM = port.gender === "M";
   const fill = isM ? "#c8a06a" : "#4a3517";
   const edge = isM ? "#8a6a3a" : "#2f2210";
+  const strokeWidth = (isM ? PIECE_VISUAL_STYLE.connector.male.strokeWidth : PIECE_VISUAL_STYLE.connector.female.strokeWidth) * s;
   return (
     <g>
-      <polygon points={neckPts} fill={fill} stroke={edge} strokeWidth={0.8} />
-      <circle cx={tx(hx)} cy={ty(hy)} r={CONN.headR * s} fill={fill} stroke={edge} strokeWidth={0.8} />
+      <polygon points={neckPts} fill={fill} stroke={edge} strokeWidth={strokeWidth} strokeLinejoin={isM ? PIECE_VISUAL_STYLE.connector.male.lineJoin : PIECE_VISUAL_STYLE.connector.female.lineJoin} />
+      <circle cx={tx(hx)} cy={ty(hy)} r={CONN.headR * s} fill={fill} stroke={edge} strokeWidth={strokeWidth} />
+      {isM && <circle cx={tx(highlightX)} cy={ty(highlightY)} r={CONN.headR * PIECE_VISUAL_STYLE.connector.male.highlightRadius * s} fill="#d8b483" />}
     </g>
   );
 }
