@@ -1,6 +1,7 @@
 import { poseAlong, sampleChain, totalLength, type Pose } from "../geometry";
 import { DEFS, portsForDef, type Category, type PortGeom, type TrackDef } from "../track/defs";
 import { bodyPolygon, groovePolyline } from "../track/render";
+import { GROOVE_WIDTH } from "../track/constants";
 import { CONN, headCenterX, neckCorners } from "../track/connector";
 import { useStore } from "../state/store";
 import type { DropPayload } from "./CanvasStage";
@@ -76,8 +77,8 @@ function Thumb({ def }: { def: TrackDef }) {
                   d={toLine(groovePolyline(samp, side))}
                   fill="none"
                   stroke={GROOVE}
-                  strokeWidth={Math.max(1.2, 6 * s)}
-                  strokeLinecap="round"
+                  strokeWidth={Math.max(1.2, GROOVE_WIDTH * s)}
+                  strokeLinecap="butt"
                   strokeLinejoin="round"
                 />
               ))}
@@ -95,8 +96,8 @@ function Thumb({ def }: { def: TrackDef }) {
                 d={toLine(groovePolyline(samp, side))}
                 fill="none"
                 stroke={GROOVE}
-                strokeWidth={Math.max(1.2, 6 * s)}
-                strokeLinecap="round"
+                strokeWidth={Math.max(1.2, GROOVE_WIDTH * s)}
+                strokeLinecap="butt"
                 strokeLinejoin="round"
               />
             ))}

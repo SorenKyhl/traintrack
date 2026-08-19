@@ -5,6 +5,7 @@ import { defOf, type PlacedPiece } from "../track/placed";
 import { portsForDef, type TrackDef } from "../track/defs";
 import { poseAlong, sampleChain, totalLength } from "../geometry";
 import { bodyPolygon, groovePolyline, unionBodyPolygons } from "../track/render";
+import { GROOVE_WIDTH } from "../track/constants";
 import { Connector } from "./Connector";
 
 const WOOD_EDGE = "#8a6a3a";
@@ -29,10 +30,13 @@ export function PieceShape({
   piece,
   level,
   onStartDrag,
+  renderPass = "all",
 }: {
   piece: PlacedPiece;
   level: number;
   onStartDrag: (id: string, e: KonvaEventObject<MouseEvent>) => void;
+  /** Bodies and grooves render separately so sibling bodies cannot cover a groove. */
+  renderPass?: "all" | "body" | "grooves";
 }) {
   const def = defOf(piece);
   const isSelected = useStore((s) => s.selectedId === piece.id);
@@ -41,12 +45,15 @@ export function PieceShape({
   const isSwitch = def.category === "switch";
   const allSamples = isSwitch ? def.lanes.map((lane) => sampleChain(lane.segments, lane.start)) : null;
   const switchBodyPoly = isSwitch ? unionBodyPolygons(allSamples!) : null;
+  const renderBody = renderPass !== "grooves";
+  const renderGrooves = renderPass !== "body";
 
   return (
     <Group
       {...transformProps(piece)}
-      onMouseDown={(e) => onStartDrag(piece.id, e)}
-      onTouchStart={(e) => onStartDrag(piece.id, e as unknown as KonvaEventObject<MouseEvent>)}
+      listening={renderPass !== "grooves"}
+      onMouseDown={renderPass !== "grooves" ? (e) => onStartDrag(piece.id, e) : undefined}
+      onTouchStart={renderPass !== "grooves" ? (e) => onStartDrag(piece.id, e as unknown as KonvaEventObject<MouseEvent>) : undefined}
       shadowColor={level > 0 ? "rgba(0,0,0,0.5)" : undefined}
       shadowBlur={level > 0 ? 6 + level * 6 : 0}
       shadowOffset={level > 0 ? { x: 0, y: 5 * level } : undefined}
@@ -54,29 +61,31 @@ export function PieceShape({
       {isSwitch ? (
         <>
           {/* Single unified body polygon — no interior strokes at lane junctions */}
-          <Line
-            points={switchBodyPoly!}
-            closed
-            fill={wood}
-            stroke={isSelected ? SELECTED : WOOD_EDGE}
-            strokeWidth={isSelected ? 4 : 2}
-          />
+          {renderBody && (
+            <Line
+              points={switchBodyPoly!}
+              closed
+              fill={wood}
+              stroke={isSelected ? SELECTED : WOOD_EDGE}
+              strokeWidth={isSelected ? 4 : 2}
+            />
+          )}
           {/* Grooves gouged through all lanes */}
-          {allSamples!.flatMap((samples, laneIndex) => {
+          {renderGrooves && allSamples!.flatMap((samples, laneIndex) => {
             const isActiveBranch = activeLane === undefined || activeLane === laneIndex;
             return ([1, -1] as const).map((side) => (
               <Line
                 key={`${laneIndex}-${side}`}
                 points={groovePolyline(samples, side)}
                 stroke={isActiveBranch ? GROOVE : "#9a8050"}
-                strokeWidth={6}
+                strokeWidth={GROOVE_WIDTH}
                 lineCap="butt"
                 lineJoin="round"
               />
             ));
           })}
           {/* BRIO-style red rotary direction indicator */}
-          <SwitchIndicator def={def} activeLaneIndex={activeLane ?? 0} />
+          {renderGrooves && <SwitchIndicator def={def} activeLaneIndex={activeLane ?? 0} />}
         </>
       ) : (
         def.lanes.map((lane, laneIndex) => {
@@ -94,32 +103,34 @@ export function PieceShape({
             : { fill: wood };
           return (
             <Group key={laneIndex}>
-              <Line
-                points={bodyPolygon(samples)}
-                closed
-                {...gradient}
-                stroke={isSelected ? SELECTED : WOOD_EDGE}
-                strokeWidth={isSelected ? 4 : 2}
-                opacity={isActiveBranch ? 1 : 0.5}
-              />
-              {([1, -1] as const).map((side) => (
+              {renderBody && (
+                <Line
+                  points={bodyPolygon(samples)}
+                  closed
+                  {...gradient}
+                  stroke={isSelected ? SELECTED : WOOD_EDGE}
+                  strokeWidth={isSelected ? 4 : 2}
+                  opacity={isActiveBranch ? 1 : 0.5}
+                />
+              )}
+              {renderGrooves && ([1, -1] as const).map((side) => (
                 <Line
                   key={side}
                   points={groovePolyline(samples, side)}
                   stroke={GROOVE}
-                  strokeWidth={6}
+                  strokeWidth={GROOVE_WIDTH}
                   lineCap="butt"
                   lineJoin="round"
                 />
               ))}
-              {isRamp && <Chevrons lane={lane} />}
+              {renderBody && isRamp && <Chevrons lane={lane} />}
             </Group>
           );
         })
       )}
 
       {/* Female sockets are part of the body (carved in); male pegs render in a top pass. */}
-      {portsForDef(def)
+      {renderBody && portsForDef(def)
         .filter((p) => p.gender === "F")
         .map((port) => (
           <Connector key={port.id} port={port} selected={isSelected} />
