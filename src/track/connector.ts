@@ -13,13 +13,12 @@ export const CONN = {
 /** Four corners of the neck rectangle for the given gender, in port-local mm. */
 export function neckCorners(gender: "M" | "F"): [number, number][] {
   const dir = gender === "M" ? 1 : -1;
-  const x0 = gender === "M" ? -1 : 1; // overlap the body edge slightly
   const x1 = dir * CONN.neckLen;
   return [
-    [x0, -CONN.neckHalf],
+    [0, -CONN.neckHalf],
     [x1, -CONN.neckHalf],
     [x1, CONN.neckHalf],
-    [x0, CONN.neckHalf],
+    [0, CONN.neckHalf],
   ];
 }
 

@@ -26,8 +26,15 @@ export function Connector({ port, selected }: { port: PortGeom; selected: boolea
   }
 
   // Female: a dark cavity carved into the end — slot widening to a round hole.
+  // Clipped to the piece side (local x <= 0) so the stroke never bleeds past
+  // the body's true edge into open space.
   return (
-    <Group x={port.pos.x} y={port.pos.y} rotation={rotation}>
+    <Group
+      x={port.pos.x}
+      y={port.pos.y}
+      rotation={rotation}
+      clipFunc={(ctx) => ctx.rect(-1000, -1000, 1000, 2000)}
+    >
       <Line points={neck} closed fill={SOCKET} stroke={SOCKET_EDGE} strokeWidth={1.2} lineJoin="round" />
       <Circle x={headX} y={0} radius={CONN.headR} fill={SOCKET} stroke={SOCKET_EDGE} strokeWidth={1.2} />
     </Group>
