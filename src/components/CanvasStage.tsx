@@ -179,7 +179,12 @@ export function CanvasStage() {
     tiers.push(
       <Group key={L}>
         {tierPieces.map((p) => (
-          <PieceShape key={p.id} piece={p} level={L} onStartDrag={startPieceDrag} />
+          <PieceShape key={p.id} piece={p} level={L} onStartDrag={startPieceDrag} renderPass="body" />
+        ))}
+        {/* Keep every recess above same-level bodies: a neighboring piece's
+            body edge must never obscure the groove at their shared port. */}
+        {tierPieces.map((p) => (
+          <PieceShape key={`${p.id}-grooves`} piece={p} level={L} onStartDrag={startPieceDrag} renderPass="grooves" />
         ))}
         {tierTrains.map((t) => (
           <TrainShape key={t.id} train={t} />
