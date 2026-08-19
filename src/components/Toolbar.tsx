@@ -12,6 +12,7 @@ export function Toolbar() {
   const flipSelected = useStore((s) => s.flipSelected);
   const deleteSelected = useStore((s) => s.deleteSelected);
   const relax = useStore((s) => s.relax);
+  const fitView = useStore((s) => s.fitView);
   const clear = useStore((s) => s.clear);
   const exportJSON = useStore((s) => s.exportJSON);
   const importJSON = useStore((s) => s.importJSON);
@@ -60,6 +61,14 @@ export function Toolbar() {
 
       <span className="divider" />
       <button onClick={relax}>Relax</button>
+      <button
+        onClick={() => {
+          const el = document.querySelector(".canvas-area");
+          if (el) fitView(el.clientWidth, el.clientHeight);
+        }}
+      >
+        ⤢ Fit
+      </button>
 
       <span className="divider" />
       <button onClick={() => setShowSaves(true)}>Saves</button>

@@ -69,3 +69,7 @@ export const DEFAULT_SPEED = 140; // mm/s
 
 // Default render scale (px per mm)
 export const DEFAULT_SCALE = 1.6;
+
+// Camera zoom bounds (shared by wheel-zoom and fitView)
+export const ZOOM_MIN = 0.3;
+export const ZOOM_MAX = 6;

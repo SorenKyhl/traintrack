@@ -4,6 +4,7 @@ import type Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useStore } from "../state/store";
 import { DEF_BY_ID } from "../track/defs";
+import { ZOOM_MAX, ZOOM_MIN } from "../track/constants";
 import { PieceShape, PiecePegs } from "./PieceShape";
 import { TrainShape } from "./TrainShape";
 
@@ -142,7 +143,7 @@ export function CanvasStage() {
     const worldX = (pointer.x - view.x) / oldScale;
     const worldY = (pointer.y - view.y) / oldScale;
     const factor = e.evt.deltaY > 0 ? 0.92 : 1.08;
-    const scale = Math.min(6, Math.max(0.3, oldScale * factor));
+    const scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, oldScale * factor));
     setView({ scale, x: pointer.x - worldX * scale, y: pointer.y - worldY * scale });
   };
 

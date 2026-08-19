@@ -6,6 +6,9 @@ import {
   SNAP_CAPTURE_MIN,
   SNAP_CAPTURE_RADIUS,
   SNAP_CAPTURE_SCREEN_PX,
+  TRACK_WIDTH,
+  ZOOM_MAX,
+  ZOOM_MIN,
 } from "../track/constants";
 import { DEF_BY_ID, portsForDef } from "../track/defs";
 import {
@@ -71,6 +74,7 @@ interface StoreState {
   setRunning: (v: boolean) => void;
   setSpeed: (v: number) => void;
   setView: (v: Partial<View>) => void;
+  fitView: (viewportW: number, viewportH: number) => void;
   relax: () => void;
   clear: () => void;
   tick: (dt: number) => void;
@@ -350,6 +354,35 @@ export const useStore = create<StoreState>((set, get) => ({
   setRunning: (v) => set({ running: v }),
   setSpeed: (v) => set({ speed: v }),
   setView: (v) => set({ view: { ...get().view, ...v } }),
+
+  fitView: (viewportW, viewportH) => {
+    const { pieces } = get();
+    if (pieces.length === 0) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const piece of pieces) {
+      defOf(piece).lanes.forEach((_, laneIndex) => {
+        for (const p of worldLaneSamples(piece, laneIndex)) {
+          minX = Math.min(minX, p.x);
+          minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x);
+          maxY = Math.max(maxY, p.y);
+        }
+      });
+    }
+    // Pad for half the track width plus connector protrusion so pegs/sockets aren't clipped.
+    const pad = TRACK_WIDTH;
+    minX -= pad;
+    minY -= pad;
+    maxX += pad;
+    maxY += pad;
+    const scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(viewportW / (maxX - minX), viewportH / (maxY - minY))));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    set({ view: { scale, x: viewportW / 2 - cx * scale, y: viewportH / 2 - cy * scale } });
+  },
 
   relax: () => {
     cancelAnim();

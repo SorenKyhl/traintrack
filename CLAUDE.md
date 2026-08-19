@@ -11,6 +11,40 @@ npm run preview  # Preview the production build
 
 No test suite exists; Playwright is installed but no tests are written yet.
 
+## Manual testing (browser preview tools)
+
+The canvas is react-konva — almost everything is drawn to `<canvas>`, so the DOM accessibility tree is nearly empty and `preview_snapshot`'s full-tree dump is mostly noise (and can blow past output limits). Prefer a targeted canvas screenshot via `preview_evaluate` instead:
+
+```js
+(() => {
+  const c = document.querySelectorAll('canvas');
+  const stage = c[c.length - 1];
+  const dpr = window.devicePixelRatio || 1;
+  const [sx, sy, sw, sh] = [480, 250, 200, 150]; // CSS-px crop region
+  const off = document.createElement('canvas');
+  off.width = sw * dpr; off.height = sh * dpr;
+  off.getContext('2d').drawImage(stage, sx * dpr, sy * dpr, sw * dpr, sh * dpr, 0, 0, sw * dpr, sh * dpr);
+  return off.toDataURL('image/png');
+})()
+```
+
+Placing a piece for a check doesn't need to go through the palette's native HTML5 drag-and-drop (hard to script). Reach the store directly — Vite serves it as an importable ES module in the page:
+
+```js
+const mod = await import('/src/state/store.ts');
+const s = mod.useStore.getState();
+s.addPiece('straight-a', 500, 300); // defId from DEFS in src/track/defs.ts, world mm
+```
+
+Aim the camera at whatever you just placed with `fitView(viewportW, viewportH)` — it fits the bounding box of all pieces into the given viewport, clamped to the same zoom bounds as wheel-zoom (`ZOOM_MIN`/`ZOOM_MAX` in `constants.ts`):
+
+```js
+const el = document.querySelector('.canvas-area');
+s.fitView(el.clientWidth, el.clientHeight);
+```
+
+For a pure coordinate-math change (no new branches or state interactions), reasoning through the geometry is usually sufficient; treat a screenshot as confirmation, not as the thing that establishes correctness — don't spend effort building tooling to prove what's already provable by inspection.
+
 ## Architecture
 
 TrainTrack is a browser-based wooden railway layout builder. World units are **millimeters** throughout — `src/track/constants.ts` is the canonical source for all piece dimensions and tolerance values.
